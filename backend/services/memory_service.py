@@ -8,30 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from models.memory import LongTermMemory
-
-
-SUMMARY_PROMPT = """
-请对以下对话做简洁摘要，保留用户需求、限制条件和关键结论。
-
-对话：
-{dialog_text}
-"""
-
-EXTRACT_MEMORY_PROMPT = """
-分析以下对话，提取用户明确表达的个人偏好或稳定信息。
-只输出 JSON，不要解释。
-
-字段：
-- name
-- preference
-- dietary_restriction
-- hobby
-- work_style
-- language_preference
-
-对话：
-{dialog}
-"""
+from prompts.memory import EXTRACT_MEMORY_PROMPT, SUMMARY_PROMPT
+from services.llm_service import create_text_response
 
 CORE_FIELDS = ["name", "preference", "dietary_restriction", "hobby", "work_style", "language_preference"]
 
@@ -146,13 +124,12 @@ class ShortTermMemory:
             dialog_text = "\n".join(
                 f"{'用户' if item['role'] == 'user' else 'AI'}：{item['content']}" for item in old_messages
             )
-            response = await client.chat.completions.create(
+            new_summary = await create_text_response(
                 model=settings.chat_model,
-                messages=[{"role": "user", "content": SUMMARY_PROMPT.format(dialog_text=dialog_text)}],
-                max_tokens=200,
+                input_messages=[{"role": "user", "content": SUMMARY_PROMPT.format(dialog_text=dialog_text)}],
                 temperature=0.2,
+                max_output_tokens=200,
             )
-            new_summary = (response.choices[0].message.content or "").strip()
             self.summary = f"{self.summary}\n{new_summary}".strip() if self.summary else new_summary
 
     def build_context_messages(self) -> list[dict[str, str]]:
@@ -197,7 +174,7 @@ def cosine_similarity_simple(v1: list[float], v2: list[float]) -> float:
     return dot / (n1 * n2) if n1 and n2 else 0.0
 
 
-async def search_long_term_memories(user_id: str, query: str, client: AsyncOpenAI, db: AsyncSession) -> list[str]:
+async def search_long_term_memories(user_id: str, query: str, embedding_client: AsyncOpenAI, db: AsyncSession) -> list[str]:
     result = await db.execute(select(LongTermMemory).where(LongTermMemory.user_id == user_id))
     memories = result.scalars().all()
     if not memories:
@@ -205,7 +182,7 @@ async def search_long_term_memories(user_id: str, query: str, client: AsyncOpenA
     deduped_memories = dedupe_memories(memories)
 
     try:
-        query_embedding = (await client.embeddings.create(input=[query], model=settings.embedding_model)).data[0].embedding
+        query_embedding = (await embedding_client.embeddings.create(input=[query], model=settings.embedding_model)).data[0].embedding
     except Exception:
         return [f"{memory.key}: {memory.value}" for memory in deduped_memories[: settings.long_term_memory_top_k]]
     scored: list[tuple[float, str]] = []
@@ -218,17 +195,23 @@ async def search_long_term_memories(user_id: str, query: str, client: AsyncOpenA
     return [text for _, text in scored[: settings.long_term_memory_top_k]]
 
 
-async def extract_and_save_memories(user_id: str, user_input: str, assistant_response: str, client: AsyncOpenAI, db: AsyncSession):
+async def extract_and_save_memories(
+    user_id: str,
+    user_input: str,
+    assistant_response: str,
+    embedding_client: AsyncOpenAI,
+    db: AsyncSession,
+):
     dialog = f"用户：{user_input}\nAI：{assistant_response}"
     try:
-        response = await client.chat.completions.create(
+        content = await create_text_response(
             model=settings.chat_model,
-            messages=[{"role": "user", "content": EXTRACT_MEMORY_PROMPT.format(dialog=dialog)}],
+            input_messages=[{"role": "user", "content": EXTRACT_MEMORY_PROMPT.format(dialog=dialog)}],
             temperature=0.1,
-            max_tokens=300,
-            response_format={"type": "json_object"},
+            max_output_tokens=300,
+            text_format={"format": {"type": "json_object"}},
         )
-        extracted = json.loads(response.choices[0].message.content or "{}")
+        extracted = json.loads(content or "{}")
     except Exception:
         return
 
@@ -248,7 +231,9 @@ async def extract_and_save_memories(user_id: str, user_input: str, assistant_res
         if duplicate_found or is_redundant_memory(normalized_key, normalized, {(canonicalize_memory(item.key, item.value)) for item in existing_memories}):
             continue
         try:
-            embedding = (await client.embeddings.create(input=[f"{normalized_key}: {normalized}"], model=settings.embedding_model)).data[0].embedding
+            embedding = (
+                await embedding_client.embeddings.create(input=[f"{normalized_key}: {normalized}"], model=settings.embedding_model)
+            ).data[0].embedding
             serialized = json.dumps(embedding)
         except Exception:
             serialized = None

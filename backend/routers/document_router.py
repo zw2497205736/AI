@@ -7,7 +7,7 @@ from database import get_db
 from models.document import Document
 from services.document_service import upload_document
 from services.embedding_service import collection
-from services.llm_service import get_openai_client
+from services.llm_service import get_embedding_client
 
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -20,7 +20,7 @@ async def upload(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    client = get_openai_client()
+    client = get_embedding_client()
     doc = await upload_document(file, description, client, db)
     return {
         "id": doc.id,

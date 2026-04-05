@@ -2,11 +2,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    app_secret_key: str = "dev-secret-change-me"
     openai_api_key: str = ""
-    openai_base_url: str = "https://api.openai.com/v1"
-    chat_model: str = "gpt-4o-mini"
-    embedding_model: str = "text-embedding-3-small"
-    request_timeout: int = 120
+    openai_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    openai_user_agent: str = "agent/8.0"
+    chat_model: str = "glm-4.7-flash"
+    embedding_api_key: str = ""
+    embedding_base_url: str = ""
+    embedding_model: str = "embedding-3"
+    request_timeout: int = 180
+    llm_retry_attempts: int = 3
     embedding_batch_size: int = 32
 
     chunk_size: int = 512
@@ -26,6 +31,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./app.db"
     redis_url: str = "redis://localhost:6379/0"
     session_memory_ttl_seconds: int = 604800
+    github_api_base_url: str = "https://api.github.com"
+    github_diff_max_files: int = 20
+    github_diff_max_chars: int = 24000
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

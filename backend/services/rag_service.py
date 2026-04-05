@@ -1,24 +1,9 @@
 from openai import AsyncOpenAI
 
 from config import settings
+from prompts.rag import RAG_PROMPT_TEMPLATE
 from services.embedding_service import get_all_chunks, vector_search
 from utils.bm25_retriever import BM25Retriever
-
-
-RAG_PROMPT_TEMPLATE = """
-你是一个团队智能助理，请严格基于参考资料回答问题。
-如果参考资料不足以支持回答，请直接明确说明“不知道”或“资料不足”，不要编造。
-默认使用自然语言直接回答，不要输出 JSON、字段对象、结构化键值或调试信息。
-如果用户表达了偏好、习惯或语言要求，可以自然确认并记住，但回复仍然要像正常助手对话，不要展示内部提取结果。
-
-=== 参考资料 ===
-{context}
-=================
-
-{memory_context}
-
-用户问题：{query}
-"""
 
 
 async def hybrid_retrieve(query: str, client: AsyncOpenAI) -> list[str]:

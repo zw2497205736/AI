@@ -13,7 +13,7 @@ from dependencies import get_current_user
 from database import SessionLocal, get_db
 from models.conversation import Conversation, Message
 from schemas.chat import ConversationUpdatePayload
-from services.llm_service import get_openai_client
+from services.llm_service import get_chat_client, get_embedding_client, stream_text_response
 from services.memory_service import ShortTermMemory, delete_memory, extract_and_save_memories, list_memories, search_long_term_memories
 from services.rag_service import build_rag_prompt, hybrid_retrieve
 from services.session_store import delete_short_memory, load_short_memory, save_short_memory
@@ -56,9 +56,9 @@ async def save_message(session_id: str, role: str, content: str, db: AsyncSessio
 
 
 async def save_memories_in_background(user_id: str, query: str, full_response: str):
-    client = get_openai_client()
+    embedding_client = get_embedding_client()
     async with SessionLocal() as session:
-        await extract_and_save_memories(user_id, query, full_response, client, session)
+        await extract_and_save_memories(user_id, query, full_response, embedding_client, session)
 
 
 @router.get("/stream")
@@ -78,7 +78,8 @@ async def chat_stream(
     if short_memory is None:
         short_memory = await hydrate_short_memory(session_id, db)
         await save_short_memory(session_id, short_memory)
-    client = get_openai_client()
+    chat_client = get_chat_client()
+    embedding_client = get_embedding_client()
 
     async def generate():
         await ensure_conversation(session_id, user_id, db)
@@ -86,11 +87,11 @@ async def chat_stream(
         if conversation and conversation.title == "新对话":
             conversation.title = generate_conversation_title(query)
             await db.commit()
-        await short_memory.maybe_compress(client)
+        await short_memory.maybe_compress(chat_client)
         await save_short_memory(session_id, short_memory)
-        rewritten_query = await rewrite_query(query, short_memory.get_summary_for_query_rewrite(), client)
-        chunks = await hybrid_retrieve(rewritten_query, client)
-        long_term_memories = await search_long_term_memories(user_id, query, client, db)
+        rewritten_query = await rewrite_query(query, short_memory.get_summary_for_query_rewrite(), chat_client)
+        chunks = await hybrid_retrieve(rewritten_query, embedding_client)
+        long_term_memories = await search_long_term_memories(user_id, query, embedding_client, db)
         rag_prompt = build_rag_prompt(rewritten_query, chunks, "\n".join(long_term_memories))
         context_messages = short_memory.build_context_messages()
         context_messages.append({"role": "user", "content": rag_prompt})
@@ -98,23 +99,14 @@ async def chat_stream(
         full_response = ""
         yield f"data: {json.dumps({'session_id': session_id})}\n\n"
 
-        stream = await client.chat.completions.create(
+        async for chunk in stream_text_response(
             model=settings.chat_model,
-            messages=context_messages,
-            stream=True,
+            input_messages=context_messages,
             temperature=0.7,
-            max_tokens=2000,
-        )
-        async for chunk in stream:
-            if not getattr(chunk, "choices", None):
-                continue
-            choice = chunk.choices[0]
-            delta = getattr(choice, "delta", None)
-            if delta is None:
-                continue
-            if delta.content:
-                full_response += delta.content
-                yield f"data: {json.dumps({'content': delta.content})}\n\n"
+            max_output_tokens=2000,
+        ):
+            full_response += chunk
+            yield f"data: {json.dumps({'content': chunk})}\n\n"
 
         short_memory.add("user", query)
         short_memory.add("assistant", full_response)

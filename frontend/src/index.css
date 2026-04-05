@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #111827;
+  background: #f7f7f5;
+}
+
+html {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top right, rgba(16, 163, 127, 0.05), transparent 26%),
+    linear-gradient(180deg, #f7f7f5 0%, #f4f4f2 100%);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+  color: #111827;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+pre {
+  overflow: auto;
+}
+
+code {
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+}
+
+.gpt-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.gpt-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(107, 114, 128, 0.2);
+  border-radius: 999px;
+}
+
+.gpt-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.markdown-body {
+  color: #111827;
+  line-height: 1.8;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body pre,
+.markdown-body blockquote {
+  margin: 0 0 1rem;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.25rem;
+}
+
+.markdown-body pre {
+  padding: 0.9rem 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.markdown-body code {
+  padding: 0.15rem 0.35rem;
+  border-radius: 8px;
+  background: #f3f4f6;
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background: transparent;
+}

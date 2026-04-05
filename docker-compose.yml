@@ -2,8 +2,11 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
 
   backend:
     build:
@@ -13,11 +16,12 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/.env:/app/.env
-      - ./backend/chroma_db:/app/chroma_db
-      - ./backend/app.db:/app/app.db
+      - backend_data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=sqlite+aiosqlite:///./data/app.db
+      - CHROMA_PERSIST_DIR=./data/chroma_db
     depends_on:
       - redis
 
@@ -29,3 +33,7 @@ services:
       - "3000:80"
     depends_on:
       - backend
+
+volumes:
+  backend_data:
+  redis_data:

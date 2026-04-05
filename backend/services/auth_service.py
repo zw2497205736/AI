@@ -15,11 +15,10 @@ from models.user import User
 
 
 TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7
-SECRET_FALLBACK = "dev-secret-change-me"
 
 
 def get_secret_key() -> bytes:
-    raw = settings.openai_api_key or SECRET_FALLBACK
+    raw = settings.app_secret_key
     return hashlib.sha256(raw.encode("utf-8")).digest()
 
 
@@ -61,4 +60,3 @@ def decode_token(token: str) -> dict:
 async def get_user_by_username(username: str, db: AsyncSession) -> Optional[User]:
     result = await db.execute(select(User).where(User.username == username))
     return result.scalar_one_or_none()
-

@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from config import settings
 from schemas.chat import ChatSettingsPayload
-from services.llm_service import get_openai_client
+from services.llm_service import create_text_response, get_embedding_client
 
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -14,6 +14,8 @@ ALLOWED_KEYS = {
     "openai_api_key": "OPENAI_API_KEY",
     "openai_base_url": "OPENAI_BASE_URL",
     "chat_model": "CHAT_MODEL",
+    "embedding_api_key": "EMBEDDING_API_KEY",
+    "embedding_base_url": "EMBEDDING_BASE_URL",
     "embedding_model": "EMBEDDING_MODEL",
 }
 
@@ -39,6 +41,8 @@ async def get_settings():
         "openai_api_key_configured": bool(settings.openai_api_key),
         "openai_base_url": settings.openai_base_url,
         "chat_model": settings.chat_model,
+        "embedding_api_key_configured": bool(settings.embedding_api_key or settings.openai_api_key),
+        "embedding_base_url": settings.embedding_base_url or settings.openai_base_url,
         "embedding_model": settings.embedding_model,
     }
 
@@ -51,18 +55,39 @@ async def update_settings(payload: ChatSettingsPayload):
 
 @router.get("/test")
 async def test_settings():
-    client = get_openai_client()
+    chat_error = None
+    embedding_error = None
     try:
-        await client.chat.completions.create(
+        await create_text_response(
             model=settings.chat_model,
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=1,
+            input_messages=[{"role": "user", "content": "ping"}],
+            max_output_tokens=1,
             temperature=0,
         )
-        await client.embeddings.create(
+    except Exception as exc:
+        chat_error = str(exc)
+
+    try:
+        embedding_client = get_embedding_client()
+        await embedding_client.embeddings.create(
             model=settings.embedding_model,
             input=["ping"],
         )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"LLM connectivity test failed: {exc}") from exc
-    return {"message": "Connection ok"}
+        embedding_error = str(exc)
+
+    if chat_error:
+        detail = f"Chat connectivity test failed: {chat_error}"
+        if embedding_error:
+            detail = f"{detail}; Embedding connectivity test failed: {embedding_error}"
+        raise HTTPException(status_code=400, detail=detail)
+
+    if embedding_error:
+        return {
+            "message": "Chat ok, embedding failed",
+            "chat_ok": True,
+            "embedding_ok": False,
+            "embedding_error": embedding_error,
+        }
+
+    return {"message": "Connection ok", "chat_ok": True, "embedding_ok": True}

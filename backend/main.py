@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import create_tables
-from routers import auth_router, chat_router, code_review_router, document_router, settings_router
+from routers import auth_router, chat_router, code_review_router, document_router, github_router, settings_router
 
 
 app = FastAPI(title="AI Team Assistant", version="1.0.0")
@@ -25,6 +25,7 @@ app.include_router(auth_router.router)
 app.include_router(document_router.router)
 app.include_router(chat_router.router)
 app.include_router(code_review_router.router)
+app.include_router(github_router.router)
 app.include_router(settings_router.router)
 
 
