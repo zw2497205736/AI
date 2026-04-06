@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 from typing import Optional
 
@@ -13,14 +14,14 @@ from dependencies import get_current_user
 from database import SessionLocal, get_db
 from models.conversation import Conversation, Message
 from schemas.chat import ConversationUpdatePayload
-from services.llm_service import get_chat_client, get_embedding_client, stream_text_response
+from services.chat_agent_service import run_chat_agent
+from services.llm_service import get_chat_client, get_embedding_client
 from services.memory_service import ShortTermMemory, delete_memory, extract_and_save_memories, list_memories, search_long_term_memories
-from services.rag_service import build_rag_prompt, hybrid_retrieve
 from services.session_store import delete_short_memory, load_short_memory, save_short_memory
-from utils.query_rewriter import rewrite_query
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
 
 
 async def ensure_conversation(session_id: str, user_id: str, db: AsyncSession):
@@ -48,6 +49,24 @@ async def hydrate_short_memory(session_id: str, db: AsyncSession) -> ShortTermMe
 def generate_conversation_title(query: str) -> str:
     compact = " ".join(query.strip().split())
     return compact[:24] if compact else "新对话"
+
+
+def build_source_preview_items(chunks: list[dict], limit: int = 3) -> list[dict]:
+    previews: list[dict] = []
+    for item in chunks[:limit]:
+        content = str(item.get("content") or "").strip()
+        preview = " ".join(content.split())
+        if len(preview) > 180:
+            preview = preview[:180].rstrip() + "..."
+        previews.append(
+            {
+                "filename": str(item.get("filename") or "未命名文档"),
+                "source_type": str(item.get("source_type") or "unknown"),
+                "score": item.get("score"),
+                "preview": preview,
+            }
+        )
+    return previews
 
 
 async def save_message(session_id: str, role: str, content: str, db: AsyncSession):
@@ -89,24 +108,26 @@ async def chat_stream(
             await db.commit()
         await short_memory.maybe_compress(chat_client)
         await save_short_memory(session_id, short_memory)
-        rewritten_query = await rewrite_query(query, short_memory.get_summary_for_query_rewrite(), chat_client)
-        chunks = await hybrid_retrieve(rewritten_query, embedding_client)
-        long_term_memories = await search_long_term_memories(user_id, query, embedding_client, db)
-        rag_prompt = build_rag_prompt(rewritten_query, chunks, "\n".join(long_term_memories))
-        context_messages = short_memory.build_context_messages()
-        context_messages.append({"role": "user", "content": rag_prompt})
-
-        full_response = ""
+        agent_result = await run_chat_agent(
+            query=query,
+            user_id=user_id,
+            short_memory=short_memory,
+            chat_client=chat_client,
+            embedding_client=embedding_client,
+            db=db,
+        )
+        source_previews = build_source_preview_items(agent_result["sources"])
         yield f"data: {json.dumps({'session_id': session_id})}\n\n"
-
-        async for chunk in stream_text_response(
-            model=settings.chat_model,
-            input_messages=context_messages,
-            temperature=0.7,
-            max_output_tokens=2000,
-        ):
-            full_response += chunk
-            yield f"data: {json.dumps({'content': chunk})}\n\n"
+        logger.info(
+            "Chat agent payload: session_id=%s mode=%s retrieval_hit=%s sources=%s",
+            session_id,
+            agent_result["mode"],
+            bool(agent_result["retrieval_hit"]),
+            source_previews,
+        )
+        yield f"data: {json.dumps({'sources': source_previews, 'retrieval_hit': bool(agent_result['retrieval_hit'])})}\n\n"
+        full_response = str(agent_result["response"] or "")
+        yield f"data: {json.dumps({'content': full_response})}\n\n"
 
         short_memory.add("user", query)
         short_memory.add("assistant", full_response)

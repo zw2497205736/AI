@@ -1,8 +1,17 @@
+export interface MessageSource {
+  filename: string
+  source_type: string
+  score?: number | null
+  preview: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: number
+  sources?: MessageSource[]
+  retrievalHit?: boolean
 }
 
 export interface Document {

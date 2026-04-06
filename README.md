@@ -88,6 +88,7 @@
 ### 后端
 
 - FastAPI
+- LangChain
 - SQLAlchemy + SQLite
 - Redis
 - ChromaDB
@@ -159,6 +160,14 @@ AI/
 5. 结果融合
 6. 构建上下文 Prompt
 7. 大模型生成回答
+
+当前项目已将 LangChain 接入到知识库链路中，主要用于：
+
+- 基于 LangChain 的 TokenTextSplitter 进行文档分块
+- 基于 LangChain Chroma VectorStore 进行向量检索
+- 基于 LangChain PromptTemplate / Runnable / OutputParser 实现 history-aware 查询改写
+- 同时使用原问题与改写问题做召回，降低多轮对话场景下的漏检索风险
+- 保留现有 BM25 + 向量检索的混合召回策略
 
 ### GitHub PR 自动审查流程
 

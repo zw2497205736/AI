@@ -8,7 +8,7 @@ import { useChatStore } from '../store/chatStore'
 
 export function LoginPage() {
   const { isAuthenticated, setAuth } = useAuthStore()
-  const { setUserId, clearSession, setMessages, setCurrentTitle, setConversations, setMemories } = useChatStore()
+  const { setUserId, clearSession, setCurrentTitle, setConversations, setMemories } = useChatStore()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [isRegister, setIsRegister] = useState(false)
@@ -66,7 +66,6 @@ export function LoginPage() {
                   setAuth(data.token, data.username)
                   setUserId(data.username)
                   clearSession()
-                  setMessages([])
                   setCurrentTitle('新对话')
                   setConversations([])
                   setMemories([])

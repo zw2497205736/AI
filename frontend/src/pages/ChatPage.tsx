@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
 import {
-  clearSession,
   deleteConversation,
   deleteMemory,
   getConversationMessages,
@@ -20,17 +19,19 @@ export function ChatPage() {
     sessionId,
     currentTitle,
     userId,
-    messages,
-    isStreaming,
+    messagesBySession,
+    streamingBySession,
     longTermMemories,
     conversations,
     setSessionId,
     setCurrentTitle,
     addMessage,
-    setMessages,
+    setSessionMessages,
     appendToLastAssistant,
-    setStreaming,
+    setLastAssistantSources,
+    setLastAssistantRetrievalHit,
     clearSession: clearLocalSession,
+    removeSession,
     setMemories,
     setConversations,
   } = useChatStore()
@@ -39,6 +40,18 @@ export function ChatPage() {
   const previousUserIdRef = useRef(userId)
   const userLoadVersionRef = useRef(0)
   const messageLoadVersionRef = useRef(0)
+  const streamControllersRef = useRef<Record<string, AbortController>>({})
+  const messages = messagesBySession[sessionId] || []
+  const isStreaming = Boolean(streamingBySession[sessionId])
+
+  const abortStreamForSession = (targetSessionId: string) => {
+    const controller = streamControllersRef.current[targetSessionId]
+    if (controller) {
+      controller.abort()
+      delete streamControllersRef.current[targetSessionId]
+    }
+    useChatStore.getState().setSessionStreaming(targetSessionId, false)
+  }
 
   useEffect(() => {
     const version = ++userLoadVersionRef.current
@@ -70,47 +83,94 @@ export function ChatPage() {
     clearLocalSession()
     setMemories([])
     setConversations([])
-    setMessages([])
+    Object.keys(streamControllersRef.current).forEach((item) => abortStreamForSession(item))
+    setSessionMessages(useChatStore.getState().sessionId, [])
     setCurrentTitle('新对话')
     setEditingTitle(false)
-  }, [clearLocalSession, setConversations, setCurrentTitle, setMemories, setMessages, userId])
+  }, [clearLocalSession, setConversations, setCurrentTitle, setMemories, setSessionMessages, userId])
+
+  useEffect(
+    () => () => {
+      Object.keys(streamControllersRef.current).forEach((item) => abortStreamForSession(item))
+    },
+    [],
+  )
 
   useEffect(() => {
     if (!sessionId) return
-    const existing = conversations.find((item) => item.session_id === sessionId)
-    if (!existing) return
     const version = ++messageLoadVersionRef.current
     void getConversationMessages(sessionId)
       .then((data) => {
         if (messageLoadVersionRef.current !== version) return
         if (useChatStore.getState().sessionId !== sessionId) return
-        setMessages(data.messages)
+        setSessionMessages(sessionId, data.messages)
         setCurrentTitle(data.title)
       })
       .catch(() => undefined)
-  }, [conversations, sessionId, setCurrentTitle, setMessages])
+  }, [sessionId, setCurrentTitle, setSessionMessages])
 
   const handleSend = async (query: string) => {
-    addMessage({ role: 'user', content: query })
-    addMessage({ role: 'assistant', content: '' })
-    setStreaming(true)
+    const activeSessionId = sessionId
+    let targetSessionId = activeSessionId
+    abortStreamForSession(activeSessionId)
+    const controller = new AbortController()
+    streamControllersRef.current[activeSessionId] = controller
+    addMessage(activeSessionId, { role: 'user', content: query })
+    addMessage(activeSessionId, { role: 'assistant', content: '', sources: [], retrievalHit: false })
+    useChatStore.getState().setSessionStreaming(activeSessionId, true)
     try {
-      await streamChat(query, sessionId, appendToLastAssistant, setSessionId)
+      await streamChat(
+        query,
+        activeSessionId,
+        (content) => {
+          appendToLastAssistant(targetSessionId, content)
+        },
+        (nextSessionId) => {
+          targetSessionId = nextSessionId
+          const state = useChatStore.getState()
+          if (state.sessionId === activeSessionId) {
+            state.setSessionId(nextSessionId)
+          }
+          if (nextSessionId !== activeSessionId) {
+            state.setSessionMessages(nextSessionId, state.messagesBySession[activeSessionId] || [])
+            state.removeSession(activeSessionId)
+            if (streamControllersRef.current[activeSessionId]) {
+              streamControllersRef.current[nextSessionId] = streamControllersRef.current[activeSessionId]
+              delete streamControllersRef.current[activeSessionId]
+            }
+            useChatStore.getState().setSessionStreaming(nextSessionId, true)
+            useChatStore.getState().setSessionStreaming(activeSessionId, false)
+          }
+        },
+        (sources) => {
+          setLastAssistantSources(targetSessionId, sources)
+        },
+        (retrievalHit) => {
+          setLastAssistantRetrievalHit(targetSessionId, retrievalHit)
+        },
+        controller.signal,
+      )
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return
+      }
+      throw error
+    } finally {
+      const finalSessionId = targetSessionId
+      if (streamControllersRef.current[finalSessionId] === controller) {
+        delete streamControllersRef.current[finalSessionId]
+      }
+      useChatStore.getState().setSessionStreaming(finalSessionId, false)
       const memories = await listMemories()
       const nextConversations = await listConversations()
       setMemories(memories)
       setConversations(nextConversations)
       const current = nextConversations.find((item) => item.session_id === useChatStore.getState().sessionId)
       setCurrentTitle(current?.title ?? '新对话')
-    } finally {
-      setStreaming(false)
     }
   }
 
   const handleNewSession = async () => {
-    if (sessionId) {
-      await clearSession(sessionId).catch(() => undefined)
-    }
     clearLocalSession()
   }
 
@@ -177,6 +237,8 @@ export function ChatPage() {
                     await deleteConversation(sessionId).catch(() => undefined)
                     const nextConversations = await listConversations()
                     setConversations(nextConversations)
+                    abortStreamForSession(sessionId)
+                    removeSession(sessionId)
                     clearLocalSession()
                   }}
                   className="rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm text-red-500"

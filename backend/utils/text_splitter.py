@@ -5,6 +5,14 @@ import tiktoken
 
 from config import settings
 
+try:
+    from langchain_text_splitters import TokenTextSplitter
+
+    HAS_LANGCHAIN = True
+except ImportError:
+    TokenTextSplitter = None
+    HAS_LANGCHAIN = False
+
 
 def get_encoder():
     return tiktoken.encoding_for_model("gpt-4o-mini")
@@ -17,21 +25,26 @@ def count_tokens(text: str) -> int:
 def split_by_token(text: str, chunk_size: Optional[int] = None, overlap: Optional[int] = None) -> list[str]:
     size = chunk_size or settings.chunk_size
     overlap_size = overlap or settings.chunk_overlap
-    enc = get_encoder()
-    tokens = enc.encode(text)
-    if not tokens:
-        return []
-
-    chunks: list[str] = []
-    step = max(1, size - overlap_size)
-    start = 0
-    while start < len(tokens):
-        end = min(start + size, len(tokens))
-        chunk = enc.decode(tokens[start:end]).strip()
-        if chunk:
-            chunks.append(chunk)
-        start += step
-    return chunks
+    if not HAS_LANGCHAIN or TokenTextSplitter is None:
+        token_ids = get_encoder().encode(text)
+        if not token_ids:
+            return []
+        step = max(1, size - overlap_size)
+        chunks: list[str] = []
+        for start in range(0, len(token_ids), step):
+            end = start + size
+            chunk = get_encoder().decode(token_ids[start:end]).strip()
+            if chunk:
+                chunks.append(chunk)
+            if end >= len(token_ids):
+                break
+        return chunks
+    splitter = TokenTextSplitter(
+        encoding_name=get_encoder().name,
+        chunk_size=size,
+        chunk_overlap=overlap_size,
+    )
+    return [chunk.strip() for chunk in splitter.split_text(text) if chunk.strip()]
 
 
 def cosine_similarity(v1: list[float], v2: list[float]) -> float:

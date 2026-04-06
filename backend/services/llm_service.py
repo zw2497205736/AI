@@ -3,7 +3,7 @@ import logging
 from typing import AsyncIterator
 
 import httpx
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from config import settings
 
@@ -36,6 +36,16 @@ def get_embedding_client() -> AsyncOpenAI:
 
 def get_openai_client() -> AsyncOpenAI:
     return get_chat_client()
+
+
+def get_embedding_sync_client() -> OpenAI:
+    return OpenAI(
+        api_key=settings.embedding_api_key or settings.openai_api_key,
+        base_url=settings.embedding_base_url or settings.openai_base_url,
+        default_headers={"User-Agent": settings.openai_user_agent},
+        timeout=settings.request_timeout,
+        max_retries=2,
+    )
 
 
 def _build_chat_messages(input_messages: list[dict], instructions: str | None = None) -> list[dict]:

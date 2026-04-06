@@ -142,6 +142,11 @@ class ShortTermMemory:
     def get_summary_for_query_rewrite(self) -> str:
         return self.summary or "（无历史对话摘要）"
 
+    def get_recent_history_for_query_rewrite(self, rounds: int = 3) -> list[dict[str, str]]:
+        if rounds <= 0:
+            return []
+        return self.history[-rounds * 2 :]
+
     def to_dict(self) -> dict:
         return {
             "summary": self.summary,

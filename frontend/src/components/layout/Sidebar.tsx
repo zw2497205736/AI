@@ -16,7 +16,8 @@ export function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { username, logout } = useAuthStore()
-  const { conversations, sessionId, setSessionId, setCurrentTitle, setMessages, setConversations } = useChatStore()
+  const { conversations, sessionId, streamingBySession, setSessionId, setCurrentTitle, clearSession, removeSession, setConversations } =
+    useChatStore()
 
   return (
     <aside className="gpt-scrollbar flex w-72 flex-col border-r border-border bg-sidebar/92 px-4 py-6 backdrop-blur">
@@ -59,12 +60,16 @@ export function Sidebar() {
                     onClick={() => {
                       setSessionId(conversation.session_id)
                       setCurrentTitle(conversation.title)
-                      setMessages([])
                       navigate('/')
                     }}
                     className="w-full text-left"
                   >
-                    <div className="line-clamp-2 text-sm font-medium text-text">{conversation.title}</div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="line-clamp-2 text-sm font-medium text-text">{conversation.title}</div>
+                      {streamingBySession[conversation.session_id] ? (
+                        <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">生成中</span>
+                      ) : null}
+                    </div>
                     <div className="mt-1 text-xs text-text">{conversation.created_at}</div>
                   </button>
                   <button
@@ -73,10 +78,9 @@ export function Sidebar() {
                       await deleteConversation(conversation.session_id)
                       const next = conversations.filter((item) => item.session_id !== conversation.session_id)
                       setConversations(next)
+                      removeSession(conversation.session_id)
                       if (conversation.session_id === sessionId) {
-                        setSessionId('')
-                        setCurrentTitle('新对话')
-                        setMessages([])
+                        clearSession()
                       }
                     }}
                     className="mt-2 text-xs text-red-500"
@@ -93,9 +97,7 @@ export function Sidebar() {
         type="button"
         onClick={() => {
           logout()
-          setSessionId('')
-          setCurrentTitle('新对话')
-          setMessages([])
+          clearSession()
           setConversations([])
           navigate('/login')
         }}

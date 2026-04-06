@@ -1,16 +1,20 @@
 import { apiClient } from './axios'
-import type { ConversationSummary, LongTermMemory, Message } from '../types'
+import type { ConversationSummary, LongTermMemory, Message, MessageSource } from '../types'
 
 export async function streamChat(
   query: string,
   sessionId: string,
   onChunk: (content: string) => void,
   onSession: (sessionId: string) => void,
+  onSources?: (sources: MessageSource[]) => void,
+  onRetrievalHit?: (retrievalHit: boolean) => void,
+  signal?: AbortSignal,
 ) {
   const url = `/api/chat/stream?query=${encodeURIComponent(query)}&session_id=${sessionId}`
   const token = localStorage.getItem('auth_token')
   const response = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    signal,
   })
   if (!response.ok || !response.body) {
     throw new Error('Chat stream failed')
@@ -33,6 +37,8 @@ export async function streamChat(
       const parsed = JSON.parse(data)
       if (parsed.session_id) onSession(parsed.session_id)
       if (parsed.content) onChunk(parsed.content)
+      if (Array.isArray(parsed.sources) && onSources) onSources(parsed.sources as MessageSource[])
+      if (typeof parsed.retrieval_hit === 'boolean' && onRetrievalHit) onRetrievalHit(parsed.retrieval_hit)
     }
   }
 }
