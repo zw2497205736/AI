@@ -11,6 +11,7 @@ from models.agent_task import AgentTask
 from models.document import Document
 from models.github_repository import GitHubRepository
 from prompts.tool import AGENT_FINAL_RESPONSE_PROMPT, AGENT_NEXT_ACTION_PROMPT, TOOL_RESPONSE_PROMPT, TOOL_SELECTION_PROMPT
+from services.github_mcp_service import github_mcp_get_pull_request, github_mcp_get_pull_request_files, github_mcp_list_pull_requests
 from services.llm_service import create_text_response
 from services.rag_service import filter_relevant_chunks, hybrid_retrieve
 
@@ -23,6 +24,9 @@ SUPPORTED_TOOLS = {
     "get_github_task_detail",
     "list_documents",
     "search_knowledge_base",
+    "github_list_pull_requests",
+    "github_get_pull_request",
+    "github_get_pull_request_files",
 }
 
 
@@ -37,12 +41,59 @@ def _extract_task_id(query: str) -> int | None:
     return None
 
 
+def _extract_pr_number(query: str) -> int | None:
+    match = re.search(r"(?:pr|pullrequest|pull request)\s*#?\s*(\d+)", query, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+async def _resolve_target_repo(query: str, user_id: str, db: AsyncSession) -> GitHubRepository | None:
+    explicit = re.search(r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)", query)
+    if explicit:
+        owner, repo_name = explicit.group(1), explicit.group(2)
+        result = await db.execute(
+            select(GitHubRepository).where(
+                GitHubRepository.user_id == user_id,
+                GitHubRepository.repo_owner == owner,
+                GitHubRepository.repo_name == repo_name,
+            )
+        )
+        repo = result.scalar_one_or_none()
+        if repo is not None:
+            return repo
+
+    result = await db.execute(
+        select(GitHubRepository)
+        .where(GitHubRepository.user_id == user_id)
+        .order_by(GitHubRepository.created_at.desc(), GitHubRepository.id.desc())
+    )
+    repos = result.scalars().all()
+    if len(repos) == 1:
+        return repos[0]
+    if repos:
+        normalized = _normalize_query(query)
+        for repo in repos:
+            if _normalize_query(repo.display_name) in normalized or _normalize_query(f"{repo.repo_owner}/{repo.repo_name}") in normalized:
+                return repo
+        return repos[0]
+    return None
+
+
 def _select_tool_by_rules(query: str) -> dict[str, Any] | None:
     normalized = _normalize_query(query)
     fallback_task_id = _extract_task_id(query)
 
     if fallback_task_id is not None and any(keyword in normalized for keyword in ["任务", "task", "结果", "详情", "审查"]):
         return {"tool": "get_github_task_detail", "arguments": {"task_id": fallback_task_id}}
+
+    fallback_pr_number = _extract_pr_number(query)
+    if fallback_pr_number is not None and any(keyword in normalized for keyword in ["改了哪些文件", "哪些文件", "文件变更", "diff", "改动文件"]):
+        return {"tool": "github_get_pull_request_files", "arguments": {"pr_number": fallback_pr_number}}
+    if fallback_pr_number is not None and any(keyword in normalized for keyword in ["状态", "详情", "是谁提的", "谁提的", "信息", "pr"]):
+        return {"tool": "github_get_pull_request", "arguments": {"pr_number": fallback_pr_number}}
+    if "pr" in normalized and any(keyword in normalized for keyword in ["最近", "哪些", "列表", "open", "当前"]):
+        return {"tool": "github_list_pull_requests", "arguments": {}}
 
     repository_keywords = ["仓库", "repo", "repository", "github仓", "接入", "连接"]
     count_keywords = ["几个", "多少", "数量", "列表", "哪些", "查看"]
@@ -66,6 +117,7 @@ def _select_tool_by_rules(query: str) -> dict[str, Any] | None:
 
 async def _select_tool(query: str) -> dict[str, Any]:
     fallback_task_id = _extract_task_id(query)
+    fallback_pr_number = _extract_pr_number(query)
     rule_selected = _select_tool_by_rules(query)
     if rule_selected is not None:
         return rule_selected
@@ -84,12 +136,16 @@ async def _select_tool(query: str) -> dict[str, Any]:
             tool_name = "none"
         if tool_name == "get_github_task_detail" and "task_id" not in arguments and fallback_task_id is not None:
             arguments["task_id"] = fallback_task_id
+        if tool_name in {"github_get_pull_request", "github_get_pull_request_files"} and "pr_number" not in arguments and fallback_pr_number is not None:
+            arguments["pr_number"] = fallback_pr_number
         if tool_name == "search_knowledge_base" and not arguments.get("query"):
             arguments["query"] = query
         return {"tool": tool_name, "arguments": arguments}
     except Exception:
         if fallback_task_id is not None:
             return {"tool": "get_github_task_detail", "arguments": {"task_id": fallback_task_id}}
+        if fallback_pr_number is not None:
+            return {"tool": "github_get_pull_request", "arguments": {"pr_number": fallback_pr_number}}
         return {"tool": "none", "arguments": {}}
 
 
@@ -196,6 +252,34 @@ async def _search_knowledge_base(query: str, embedding_client, chat_client) -> t
     return "\n".join(lines), chunks, True
 
 
+async def _github_list_pull_requests(query: str, user_id: str, db: AsyncSession) -> tuple[str, list[dict], bool]:
+    repo = await _resolve_target_repo(query, user_id, db)
+    if repo is None:
+        return "当前没有可用于查询的已接入仓库。", [], False
+    result = await github_mcp_list_pull_requests(repo)
+    return f"仓库：{repo.display_name}\n{result}", [], False
+
+
+async def _github_get_pull_request(query: str, user_id: str, db: AsyncSession, pr_number: int | None) -> tuple[str, list[dict], bool]:
+    if not pr_number:
+        return "没有提供有效的 PR 编号。", [], False
+    repo = await _resolve_target_repo(query, user_id, db)
+    if repo is None:
+        return "当前没有可用于查询的已接入仓库。", [], False
+    result = await github_mcp_get_pull_request(repo, pr_number)
+    return f"仓库：{repo.display_name}\n{result}", [], False
+
+
+async def _github_get_pull_request_files(query: str, user_id: str, db: AsyncSession, pr_number: int | None) -> tuple[str, list[dict], bool]:
+    if not pr_number:
+        return "没有提供有效的 PR 编号。", [], False
+    repo = await _resolve_target_repo(query, user_id, db)
+    if repo is None:
+        return "当前没有可用于查询的已接入仓库。", [], False
+    result = await github_mcp_get_pull_request_files(repo, pr_number)
+    return f"仓库：{repo.display_name}\n{result}", [], False
+
+
 async def maybe_run_chat_tool(query: str, user_id: str, db: AsyncSession, embedding_client, chat_client) -> dict[str, Any] | None:
     selection = await _select_tool(query)
     tool_name = selection["tool"]
@@ -215,6 +299,12 @@ async def maybe_run_chat_tool(query: str, user_id: str, db: AsyncSession, embedd
         result_text, sources, retrieval_hit = await _list_documents(db)
     elif tool_name == "search_knowledge_base":
         result_text, sources, retrieval_hit = await _search_knowledge_base(str(arguments.get("query") or query), embedding_client, chat_client)
+    elif tool_name == "github_list_pull_requests":
+        result_text, sources, retrieval_hit = await _github_list_pull_requests(query, user_id, db)
+    elif tool_name == "github_get_pull_request":
+        result_text, sources, retrieval_hit = await _github_get_pull_request(query, user_id, db, arguments.get("pr_number"))
+    elif tool_name == "github_get_pull_request_files":
+        result_text, sources, retrieval_hit = await _github_get_pull_request_files(query, user_id, db, arguments.get("pr_number"))
     else:
         return None
 

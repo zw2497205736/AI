@@ -24,6 +24,20 @@ TOOL_SELECTION_PROMPT = """
    适用问题：知识库里有没有某主题、帮我查知识库中关于 xxx 的内容
    参数：query（字符串）
 
+6. github_list_pull_requests
+   用途：查询某个已接入 GitHub 仓库当前的 PR 列表
+   适用问题：这个仓库最近有哪些 PR、某仓库当前有哪些 open PR
+
+7. github_get_pull_request
+   用途：查询某个 PR 的基本信息
+   适用问题：PR 12 的状态是什么、PR 3 是谁提的
+   参数：pr_number（整数）
+
+8. github_get_pull_request_files
+   用途：查询某个 PR 改了哪些文件
+   适用问题：PR 12 改了哪些文件、这个 PR 主要改了哪些模块
+   参数：pr_number（整数）
+
 规则：
 1. 只有当问题明显是在查询平台数据、GitHub 数据、任务数据、文档数据、知识库搜索时，才选择工具
 2. 如果问题更适合普通问答、代码解释、闲聊、总结、泛化介绍，不要调用工具
@@ -77,6 +91,9 @@ AGENT_NEXT_ACTION_PROMPT = """
 - get_github_task_detail
 - list_documents
 - search_knowledge_base
+- github_list_pull_requests
+- github_get_pull_request
+- github_get_pull_request_files
 
 规则：
 1. 如果问题明显是在查询平台内数据、GitHub 仓库/任务、知识库内容，应优先选择 tool_call

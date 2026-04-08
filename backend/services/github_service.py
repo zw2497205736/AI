@@ -81,6 +81,22 @@ async def fetch_pull_request(repo: GitHubRepository, pr_number: int) -> dict[str
     return response.json()
 
 
+async def fetch_pull_requests(repo: GitHubRepository, *, state: str = "open", per_page: int = 10) -> list[dict[str, Any]]:
+    token = decrypt_github_token(repo.github_token_encrypted)
+    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+        response = await client.get(
+            f"{settings.github_api_base_url}/repos/{repo.repo_owner}/{repo.repo_name}/pulls",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            params={"state": state, "per_page": per_page},
+        )
+    response.raise_for_status()
+    return response.json()
+
+
 async def fetch_pull_request_files(repo: GitHubRepository, pr_number: int) -> list[dict[str, Any]]:
     token = decrypt_github_token(repo.github_token_encrypted)
     files: list[dict[str, Any]] = []

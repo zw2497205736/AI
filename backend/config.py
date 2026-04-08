@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     github_api_base_url: str = "https://api.github.com"
     github_diff_max_files: int = 20
     github_diff_max_chars: int = 24000
+    github_mcp_enabled: bool = False
+    github_mcp_url: str = "https://api.githubcopilot.com/mcp/"
+    github_mcp_timeout: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
