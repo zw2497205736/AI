@@ -7,8 +7,8 @@ from config import settings
 from database import SessionLocal
 from models.agent_task import AgentTask
 from models.github_repository import GitHubRepository
-from prompts.agent import REVIEW_SYSTEM_PROMPT, TEST_SYSTEM_PROMPT, TEST_SYSTEM_PROMPT_COMPACT
-from prompts.testing import UNIT_TEST_GENERATION_PROMPT, UNIT_TEST_GENERATION_PROMPT_COMPACT
+from prompts.github_pr_review import REVIEW_SYSTEM_PROMPT, TEST_SYSTEM_PROMPT, TEST_SYSTEM_PROMPT_COMPACT
+from prompts.github_pr_testing import UNIT_TEST_GENERATION_PROMPT, UNIT_TEST_GENERATION_PROMPT_COMPACT
 from services.github_service import build_reviewable_diff, fetch_pull_request, fetch_pull_request_files
 from services.llm_service import create_text_response
 

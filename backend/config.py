@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     final_top_k: int = 5
     vector_min_score: float = 0.5
 
-    max_context_tokens: int = 4000
+    max_context_tokens: int = 32000
     summary_keep_rounds: int = 3
     long_term_memory_top_k: int = 3
 

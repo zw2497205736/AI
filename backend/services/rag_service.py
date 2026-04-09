@@ -3,7 +3,7 @@ import json
 from openai import AsyncOpenAI
 
 from config import settings
-from prompts.rag import RAG_PROMPT_TEMPLATE
+from prompts.rag_answer import RAG_PROMPT_TEMPLATE
 from services.embedding_service import get_all_chunk_records, vector_search
 from services.llm_service import create_text_response
 from utils.bm25_retriever import BM25Retriever

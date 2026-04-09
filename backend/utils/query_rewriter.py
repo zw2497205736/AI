@@ -11,7 +11,7 @@ except ImportError:
     HAS_LANGCHAIN = False
 
 from config import settings
-from prompts.query import QUERY_REWRITE_PROMPT
+from prompts.rag_query_rewrite import QUERY_REWRITE_PROMPT
 from services.llm_service import create_text_response
 
 

@@ -10,7 +10,7 @@ from config import settings
 from models.agent_task import AgentTask
 from models.document import Document
 from models.github_repository import GitHubRepository
-from prompts.tool import AGENT_FINAL_RESPONSE_PROMPT, AGENT_NEXT_ACTION_PROMPT, TOOL_RESPONSE_PROMPT, TOOL_SELECTION_PROMPT
+from prompts.chat_agent_tool import AGENT_FINAL_RESPONSE_PROMPT, AGENT_NEXT_ACTION_PROMPT, TOOL_RESPONSE_PROMPT, TOOL_SELECTION_PROMPT
 from services.github_mcp_service import github_mcp_get_pull_request, github_mcp_get_pull_request_files, github_mcp_list_pull_requests
 from services.llm_service import create_text_response
 from services.rag_service import filter_relevant_chunks, hybrid_retrieve

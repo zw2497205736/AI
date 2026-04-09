@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from models.memory import LongTermMemory
-from prompts.memory import EXTRACT_MEMORY_PROMPT, SUMMARY_PROMPT
+from prompts.chat_memory import EXTRACT_MEMORY_PROMPT, SUMMARY_PROMPT
 from services.llm_service import create_text_response
 
 CORE_FIELDS = ["name", "preference", "dietary_restriction", "hobby", "work_style", "language_preference"]

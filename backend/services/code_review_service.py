@@ -1,5 +1,5 @@
 from config import settings
-from prompts.code_review import CODE_REVIEW_SYSTEM_PROMPT
+from prompts.manual_code_review import CODE_REVIEW_SYSTEM_PROMPT
 from services.llm_service import stream_text_response
 
 
