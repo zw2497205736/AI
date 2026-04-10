@@ -11,6 +11,10 @@
 | --- | --- | --- | --- |
 | `github_pr_review.py` | `backend/services/agent_service.py` | GitHub Agent / PR 自动审查 | 生成 Code Review 和测试建议 |
 | `github_pr_testing.py` | `backend/services/agent_service.py` | GitHub Agent / PR 自动审查 | 生成单元测试建议与测试覆盖分析 |
+| `pr_review_agent_planner.py` | `backend/services/pr_review_agent_service.py` | GitHub Agent / PR 自动审查 | 生成 PR 审查计划 |
+| `pr_review_agent_executor.py` | `backend/services/pr_review_agent_service.py` | GitHub Agent / PR 自动审查 | 决定下一步工具调用或阶段生成动作 |
+| `pr_review_agent_replanner.py` | `backend/services/pr_review_agent_service.py` | GitHub Agent / PR 自动审查 | 在执行停滞或失败时重规划 |
+| `pr_review_agent_reporter.py` | `backend/services/pr_review_agent_service.py` | GitHub Agent / PR 自动审查 | 汇总 Agent 执行轨迹 |
 | `manual_code_review.py` | `backend/services/code_review_service.py` | 手动 Code Review 页面 | 对用户粘贴的代码做人工触发审查 |
 | `rag_answer.py` | `backend/services/rag_service.py` | 智能问答 / 知识库问答 | 组织知识库问答主回答 |
 | `rag_query_rewrite.py` | `backend/utils/query_rewriter.py` | 智能问答 / RAG 检索前处理 | 对用户问题做查询改写 |
@@ -51,6 +55,11 @@
 3. RAG 知识库问答
 4. 会话记忆
 5. ChatAgent 工具调用
+
+其中 GitHub PR 自动审查现在分成两层：
+
+- 业务阶段 Prompt：负责生成 Review、测试建议、单元测试建议
+- Agent Prompt：负责规划、动作决策、重规划和执行轨迹汇总
 
 这样看，`prompts` 目录本质上就是“业务能力对应的提示词层”。
 

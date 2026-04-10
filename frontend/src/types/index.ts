@@ -71,3 +71,41 @@ export interface AgentTaskDetail extends AgentTaskSummary {
   unit_test_generation_content: string
   source_payload?: Record<string, unknown> | null
 }
+
+export interface AgentTracePlan {
+  pr_type?: string
+  focus?: string[]
+  steps?: string[]
+  knowledge_queries?: string[]
+  suggested_tools?: string[]
+  planning_note?: string
+}
+
+export interface AgentTraceToolCall {
+  name: string
+  arguments?: Record<string, unknown>
+  output_preview?: string
+}
+
+export interface AgentTraceReplan {
+  reason?: string
+  replan_reason?: string
+  new_focus?: string[]
+  next_steps?: string[]
+  additional_knowledge_queries?: string[]
+  suggested_tools?: string[]
+}
+
+export interface AgentTrace {
+  mode?: string
+  plan?: AgentTracePlan
+  executed_steps?: string[]
+  tool_calls?: AgentTraceToolCall[]
+  replans?: AgentTraceReplan[]
+  fallback_events?: string[]
+  knowledge_sources?: Array<{
+    filename: string
+    source_type?: string
+  }>
+  execution_summary?: string
+}

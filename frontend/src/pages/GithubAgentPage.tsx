@@ -11,7 +11,7 @@ import {
   listGitHubRepositories,
   rerunAgentTask,
 } from '../api/githubApi'
-import type { AgentTaskDetail, AgentTaskSummary, GitHubRepository } from '../types'
+import type { AgentTaskDetail, AgentTaskSummary, AgentTrace, GitHubRepository } from '../types'
 
 
 const statusClassName: Record<string, string> = {
@@ -70,6 +70,18 @@ function formatDateTime(value?: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function getAgentTrace(task: AgentTaskDetail | null): AgentTrace | null {
+  if (!task?.source_payload || typeof task.source_payload !== 'object') {
+    return null
+  }
+  const payload = task.source_payload as Record<string, unknown>
+  const trace = payload.agent_trace
+  if (!trace || typeof trace !== 'object') {
+    return null
+  }
+  return trace as AgentTrace
 }
 
 
@@ -140,6 +152,7 @@ export function GithubAgentPage() {
 
   const activePanelTitle =
     activePanel === 'review' ? 'Code Review' : activePanel === 'test' ? '测试建议' : '单元测试建议 / 示例代码'
+  const agentTrace = getAgentTrace(selectedTask)
 
   const renderAgentSection = (title: string, content: string) => {
     const failed = content.startsWith('生成失败：')
@@ -158,6 +171,116 @@ export function GithubAgentPage() {
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content || '暂无结果'}</ReactMarkdown>
           </div>
         )}
+      </div>
+    )
+  }
+
+  const renderAgentTrace = () => {
+    if (!agentTrace) {
+      return (
+        <div className="rounded-[28px] border border-dashed border-border bg-[#fafafa] p-5 text-sm leading-7 text-text">
+          当前任务暂无 Agent 执行轨迹。
+        </div>
+      )
+    }
+
+    const plan = agentTrace.plan
+    const toolCalls = agentTrace.tool_calls ?? []
+    const replans = agentTrace.replans ?? []
+    const fallbackEvents = agentTrace.fallback_events ?? []
+    const knowledgeSources = agentTrace.knowledge_sources ?? []
+    const executedSteps = agentTrace.executed_steps ?? []
+
+    return (
+      <div className="rounded-[28px] border border-border bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold text-text">Agent 执行轨迹</div>
+            <div className="mt-1 text-sm text-text">展示本次 PR 审查的计划、工具调用、重规划与兜底记录。</div>
+          </div>
+          <div className="rounded-full bg-[#f3f4f6] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-text">
+            {agentTrace.mode || 'agent'}
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-[24px] border border-border bg-[#fbfbfa] p-4">
+            <div className="text-xs uppercase tracking-[0.18em] text-text">Plan</div>
+            <div className="mt-3 space-y-2 text-sm leading-7 text-text">
+              <div>PR 类型：{plan?.pr_type || '未知'}</div>
+              <div>关注点：{plan?.focus?.length ? plan.focus.join('、') : '无'}</div>
+              <div>计划步骤：{plan?.steps?.length ? plan.steps.join(' → ') : '无'}</div>
+              <div>知识查询：{plan?.knowledge_queries?.length ? plan.knowledge_queries.join('；') : '无'}</div>
+              <div>备注：{plan?.planning_note || '无'}</div>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-border bg-[#fbfbfa] p-4">
+            <div className="text-xs uppercase tracking-[0.18em] text-text">Execution</div>
+            <div className="mt-3 space-y-2 text-sm leading-7 text-text">
+              <div>执行步骤数：{executedSteps.length}</div>
+              <div>工具调用数：{toolCalls.length}</div>
+              <div>重规划次数：{replans.length}</div>
+              <div>兜底事件数：{fallbackEvents.length}</div>
+              <div>命中知识来源：{knowledgeSources.length}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1.1fr,0.9fr]">
+          <div className="rounded-[24px] border border-border bg-[#fbfbfa] p-4">
+            <div className="text-xs uppercase tracking-[0.18em] text-text">Tool Calls</div>
+            <div className="mt-3 space-y-3 text-sm text-text">
+              {toolCalls.length === 0 ? <div>暂无工具调用</div> : null}
+              {toolCalls.map((toolCall, index) => (
+                <div key={`${toolCall.name}-${index}`} className="rounded-2xl border border-border bg-white p-3">
+                  <div className="font-medium text-text">{toolCall.name}</div>
+                  <div className="mt-1 text-xs leading-6 text-text">
+                    参数：{toolCall.arguments && Object.keys(toolCall.arguments).length ? JSON.stringify(toolCall.arguments, null, 0) : '{}'}
+                  </div>
+                  <div className="mt-2 text-xs leading-6 text-text">{toolCall.output_preview || '无输出预览'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-[24px] border border-border bg-[#fbfbfa] p-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-text">Replans</div>
+              <div className="mt-3 space-y-3 text-sm text-text">
+                {replans.length === 0 ? <div>本次执行未触发重规划</div> : null}
+                {replans.map((replan, index) => (
+                  <div key={`${replan.reason || 'replan'}-${index}`} className="rounded-2xl border border-border bg-white p-3">
+                    <div>原因：{replan.reason || '未知'}</div>
+                    <div>重规划说明：{replan.replan_reason || '无'}</div>
+                    <div>新关注点：{replan.new_focus?.length ? replan.new_focus.join('、') : '无'}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-border bg-[#fbfbfa] p-4">
+              <div className="text-xs uppercase tracking-[0.18em] text-text">Fallback</div>
+              <div className="mt-3 space-y-2 text-sm text-text">
+                {fallbackEvents.length === 0 ? <div>本次执行未触发兜底</div> : null}
+                {fallbackEvents.map((event, index) => (
+                  <div key={`${event}-${index}`} className="rounded-2xl border border-border bg-white px-3 py-2">
+                    {event}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {agentTrace.execution_summary ? (
+          <div className="mt-4 rounded-[24px] border border-border bg-[#fbfbfa] p-4">
+            <div className="mb-3 text-xs uppercase tracking-[0.18em] text-text">Summary</div>
+            <div className="markdown-body text-sm leading-7 text-text">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{agentTrace.execution_summary}</ReactMarkdown>
+            </div>
+          </div>
+        ) : null}
       </div>
     )
   }
@@ -511,6 +634,8 @@ export function GithubAgentPage() {
                 })}
               </div>
             </div>
+
+            {renderAgentTrace()}
 
             {renderAgentSection(activePanelTitle, activePanelContent)}
           </div>
