@@ -1,4 +1,5 @@
 import io
+import logging
 
 import PyPDF2
 import docx
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.document import Document
 from services.embedding_service import add_chunks_to_store
 from utils.text_splitter import split_by_token
+
+logger = logging.getLogger(__name__)
 
 
 async def parse_document(file: UploadFile) -> str:
@@ -30,6 +33,7 @@ async def upload_document(file: UploadFile, description: str, client: AsyncOpenA
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
+    logger.info("Document upload started: id=%s filename=%s type=%s", doc.id, doc.filename, doc.doc_type)
 
     try:
         text = await parse_document(file)
@@ -42,11 +46,12 @@ async def upload_document(file: UploadFile, description: str, client: AsyncOpenA
         doc.chunk_count = len(chunks)
         doc.status = "ready"
         doc.error_message = None
+        logger.info("Document upload finished: id=%s filename=%s chunks=%s status=ready", doc.id, doc.filename, doc.chunk_count)
     except Exception as exc:
         doc.status = "error"
         doc.error_message = str(exc)
+        logger.exception("Document upload failed: id=%s filename=%s", doc.id, doc.filename)
 
     await db.commit()
     await db.refresh(doc)
     return doc
-

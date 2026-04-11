@@ -103,7 +103,7 @@ def _safe_json_loads(content: str) -> dict[str, Any]:
                     return parsed
             except json.JSONDecodeError:
                 pass
-        logger.warning("Failed to parse JSON content: %s", content[:500])
+        logger.warning("Failed to parse JSON content, preview=%s", content[:160].replace("\n", " "))
     return {}
 
 
@@ -176,7 +176,93 @@ def _build_stage_prompt(state: PRReviewAgentState) -> str:
     )
 
 
+def _infer_pr_type(files: list[dict[str, Any]], pr_title: str, diff_text: str) -> str:
+    filenames = [str(item.get("filename") or "").lower() for item in files]
+    extensions = {name.rsplit(".", 1)[-1] for name in filenames if "." in name}
+    title = pr_title.lower()
+    if filenames and all("test" in name or name.endswith(("test.java", "test.py", "spec.ts", "spec.js")) for name in filenames):
+        return "test_only"
+    if any(ext in {"md", "txt", "rst"} for ext in extensions) and len(extensions) <= 1:
+        return "other"
+    if any(ext in {"yml", "yaml", "json", "toml", "ini"} for ext in extensions):
+        return "config_change"
+    if any(ext in {"tsx", "ts", "jsx", "js", "css", "scss", "vue"} for ext in extensions):
+        return "frontend_ui_change"
+    if any(ext in {"java", "py", "go", "kt", "rb"} for ext in extensions):
+        if "fix" in title or "bug" in title:
+            return "bugfix"
+        if "refactor" in title:
+            return "refactor"
+        return "backend_api_change"
+    if "test" in title:
+        return "test_only"
+    if "refactor" in title:
+        return "refactor"
+    return "mixed_change" if len(files) > 3 else "other"
+
+
+def _infer_focus(pr_type: str, files: list[dict[str, Any]]) -> list[str]:
+    changed_filenames = [str(item.get("filename") or "").lower() for item in files]
+    focus_map = {
+        "test_only": ["算法正确性", "边界条件处理", "测试覆盖", "断言有效性"],
+        "backend_api_change": ["功能逻辑", "异常处理", "接口兼容性", "回归风险"],
+        "frontend_ui_change": ["交互逻辑", "状态同步", "边界展示", "回归风险"],
+        "bugfix": ["修复是否闭环", "边界条件处理", "回归风险", "异常路径"],
+        "refactor": ["行为一致性", "可维护性", "隐藏回归", "测试覆盖"],
+        "config_change": ["配置正确性", "环境兼容性", "默认值风险", "回归风险"],
+        "mixed_change": ["功能逻辑", "边界条件处理", "测试覆盖", "回归风险"],
+        "other": ["功能逻辑", "代码规范", "边界条件处理", "测试覆盖"],
+    }
+    focus = focus_map.get(pr_type, focus_map["other"]).copy()
+    if any("security" in name or "auth" in name for name in changed_filenames) and "安全性" not in focus:
+        focus[0] = "安全性"
+    return focus[:4]
+
+
+def _infer_steps(pr_type: str) -> list[str]:
+    base_steps = [
+        "获取 PR 基本信息",
+        "检查 PR Diff 关键变更",
+        "生成 Code Review",
+        "生成测试建议",
+        "生成单元测试建议",
+    ]
+    if pr_type == "test_only":
+        return [
+            "获取 PR 基本信息",
+            "检查测试相关 Diff",
+            "生成 Code Review",
+            "生成测试建议",
+            "生成单元测试建议",
+        ]
+    return base_steps
+
+
+def _infer_knowledge_queries(pr_type: str, files: list[dict[str, Any]]) -> list[str]:
+    filenames = [str(item.get("filename") or "").lower() for item in files]
+    queries: list[str] = []
+    if pr_type in {"test_only", "backend_api_change", "bugfix"}:
+        queries.append("团队单元测试规范")
+    if any(name.endswith((".java", ".py", ".go", ".ts", ".js")) for name in filenames):
+        queries.append("团队代码审查规范")
+    return queries[:2]
+
+
 async def _plan_agent(repo: GitHubRepository, pr_data: dict[str, Any], files: list[dict[str, Any]], diff_text: str) -> AgentPlan:
+    rule_pr_type = _infer_pr_type(files, str(pr_data.get("title") or ""), diff_text)
+    rule_focus = _infer_focus(rule_pr_type, files)
+    rule_steps = _infer_steps(rule_pr_type)
+    rule_knowledge_queries = _infer_knowledge_queries(rule_pr_type, files)
+
+    fallback_plan = AgentPlan(
+        pr_type=rule_pr_type,
+        focus=rule_focus,
+        steps=rule_steps,
+        knowledge_queries=rule_knowledge_queries,
+        suggested_tools=["get_pr_meta", "get_pr_diff", *(["search_review_knowledge"] if rule_knowledge_queries else [])][:4],
+        planning_note="优先基于规则识别的风险点完成 PR 审查。",
+    )
+
     content = await create_text_response(
         model=settings.chat_model,
         instructions=PR_REVIEW_AGENT_PLANNER_PROMPT,
@@ -185,13 +271,15 @@ async def _plan_agent(repo: GitHubRepository, pr_data: dict[str, Any], files: li
         text_format={"format": {"type": "json_object"}},
     )
     parsed = _safe_json_loads(content)
+    if not parsed:
+        return fallback_plan
     return AgentPlan(
-        pr_type=str(parsed.get("pr_type") or "other"),
-        focus=[str(item) for item in parsed.get("focus") or []][:4],
-        steps=[str(item) for item in parsed.get("steps") or []][:5],
-        knowledge_queries=[str(item) for item in parsed.get("knowledge_queries") or []][:3],
-        suggested_tools=[str(item) for item in parsed.get("suggested_tools") or []][:4],
-        planning_note=str(parsed.get("planning_note") or ""),
+        pr_type=str(parsed.get("pr_type") or fallback_plan.pr_type),
+        focus=[str(item) for item in parsed.get("focus") or fallback_plan.focus][:4],
+        steps=[str(item) for item in parsed.get("steps") or fallback_plan.steps][:5],
+        knowledge_queries=[str(item) for item in parsed.get("knowledge_queries") or fallback_plan.knowledge_queries][:3],
+        suggested_tools=[str(item) for item in parsed.get("suggested_tools") or fallback_plan.suggested_tools][:4],
+        planning_note=str(parsed.get("planning_note") or fallback_plan.planning_note),
     )
 
 
