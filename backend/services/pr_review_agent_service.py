@@ -77,16 +77,25 @@ async def _safe_markdown_completion(system_prompt: str, user_prompt: str, fallba
         for attempt in range(1, attempts + 1):
             try:
                 content = await create_text_response(
-                    model=settings.chat_model,
+                    model=settings.pr_agent_generation_model,
                     instructions=prompt,
                     input_messages=[{"role": "user", "content": user_prompt}],
                     max_output_tokens=1800,
                 )
-                return content.strip() or "暂无结果"
+                normalized = content.strip()
+                if normalized:
+                    return normalized
+                logger.warning(
+                    "PR review agent markdown generation returned empty content: prompt_variant=%s attempt=%s",
+                    prompt_index,
+                    attempt,
+                )
             except Exception as exc:
                 last_exc = exc
                 logger.exception("PR review agent markdown generation failed: prompt_variant=%s attempt=%s", prompt_index, attempt)
-    return f"生成失败：{last_exc}"
+    if last_exc is not None:
+        return f"生成失败：{last_exc}"
+    return "生成失败：模型未返回有效内容"
 
 
 def _safe_json_loads(content: str) -> dict[str, Any]:
@@ -112,6 +121,30 @@ def _truncate(text: str, limit: int = 600) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[:limit] + "\n...[truncated]"
+
+
+def _rule_fallback_next_action(state: PRReviewAgentState, reason: str) -> dict[str, Any]:
+    if not _has_tool_call(state, "get_pr_meta", {}):
+        return {"action": "use_tool", "tool_name": "get_pr_meta", "arguments": {}, "reason": f"{reason}_missing_pr_meta"}
+    if not _has_tool_call(state, "get_pr_diff", {}):
+        return {"action": "use_tool", "tool_name": "get_pr_diff", "arguments": {}, "reason": f"{reason}_missing_pr_diff"}
+    if state.plan.knowledge_queries:
+        for query in state.plan.knowledge_queries:
+            arguments = {"query": query}
+            if not _has_tool_call(state, "search_review_knowledge", arguments):
+                return {
+                    "action": "use_tool",
+                    "tool_name": "search_review_knowledge",
+                    "arguments": arguments,
+                    "reason": f"{reason}_missing_knowledge",
+                }
+    if not state.review_content:
+        return {"action": "generate_stage", "stage": "review", "reason": f"{reason}_missing_review"}
+    if not state.test_suggestion_content:
+        return {"action": "generate_stage", "stage": "test_suggestion", "reason": f"{reason}_missing_test_suggestion"}
+    if not state.unit_test_generation_content:
+        return {"action": "generate_stage", "stage": "unit_test", "reason": f"{reason}_missing_unit_test"}
+    return {"action": "finish", "reason": f"{reason}_all_completed"}
 
 
 def _build_planner_input(repo: GitHubRepository, pr_data: dict[str, Any], files: list[dict[str, Any]], diff_text: str) -> str:
@@ -264,7 +297,7 @@ async def _plan_agent(repo: GitHubRepository, pr_data: dict[str, Any], files: li
     )
 
     content = await create_text_response(
-        model=settings.chat_model,
+        model=settings.pr_agent_control_model,
         instructions=PR_REVIEW_AGENT_PLANNER_PROMPT,
         input_messages=[{"role": "user", "content": _build_planner_input(repo, pr_data, files, diff_text)}],
         max_output_tokens=600,
@@ -298,7 +331,7 @@ def _build_replanner_input(state: PRReviewAgentState, reason: str) -> str:
 
 async def _replan_agent(state: PRReviewAgentState, reason: str) -> None:
     content = await create_text_response(
-        model=settings.chat_model,
+        model=settings.pr_agent_control_model,
         instructions=PR_REVIEW_AGENT_REPLANNER_PROMPT,
         input_messages=[{"role": "user", "content": _build_replanner_input(state, reason)}],
         max_output_tokens=400,
@@ -338,25 +371,13 @@ async def _replan_agent(state: PRReviewAgentState, reason: str) -> None:
 
 
 async def _decide_next_action(state: PRReviewAgentState) -> dict[str, Any]:
-    # Enforce a minimal tool-use policy before generation so the module
-    # behaves like an actual review agent rather than a pure prompt chain.
-    if not _has_tool_call(state, "get_pr_meta", {}):
-        return {"action": "use_tool", "tool_name": "get_pr_meta", "arguments": {}, "reason": "required_context_bootstrap"}
-    if not _has_tool_call(state, "get_pr_diff", {}):
-        return {"action": "use_tool", "tool_name": "get_pr_diff", "arguments": {}, "reason": "required_diff_context"}
-    if state.plan.knowledge_queries:
-        for query in state.plan.knowledge_queries:
-            arguments = {"query": query}
-            if not _has_tool_call(state, "search_review_knowledge", arguments):
-                return {
-                    "action": "use_tool",
-                    "tool_name": "search_review_knowledge",
-                    "arguments": arguments,
-                    "reason": "planned_knowledge_lookup",
-                }
+    # Enforce a minimal rule-based workflow before model-driven control.
+    preflight_action = _rule_fallback_next_action(state, "required")
+    if preflight_action["action"] != "finish":
+        return preflight_action
 
     content = await create_text_response(
-        model=settings.chat_model,
+        model=settings.pr_agent_control_model,
         instructions=PR_REVIEW_AGENT_EXECUTOR_PROMPT,
         input_messages=[{"role": "user", "content": _build_executor_input(state)}],
         max_output_tokens=300,
@@ -379,14 +400,7 @@ async def _decide_next_action(state: PRReviewAgentState) -> dict[str, Any]:
         state.fallback_events.append("executor_invalid_action_schema")
     else:
         state.fallback_events.append("executor_non_json_output")
-
-    if not state.review_content:
-        return {"action": "generate_stage", "stage": "review", "reason": "rule_fallback_missing_review"}
-    if not state.test_suggestion_content:
-        return {"action": "generate_stage", "stage": "test_suggestion", "reason": "rule_fallback_missing_test_suggestion"}
-    if not state.unit_test_generation_content:
-        return {"action": "generate_stage", "stage": "unit_test", "reason": "rule_fallback_missing_unit_test"}
-    return {"action": "finish", "reason": "rule_fallback_all_completed"}
+    return _rule_fallback_next_action(state, "rule_fallback")
 
 
 def _has_tool_call(state: PRReviewAgentState, tool_name: str, arguments: dict[str, Any]) -> bool:
@@ -576,13 +590,13 @@ async def run_pr_review_agent(task: AgentTask, repo: GitHubRepository, db: Async
             break
 
     if not state.review_content:
-        await _replan_agent(state, "review_missing_after_loop")
+        state.fallback_events.append("force_generate_review_after_loop")
         await _generate_stage(state, "review")
     if not state.test_suggestion_content:
-        await _replan_agent(state, "test_suggestion_missing_after_loop")
+        state.fallback_events.append("force_generate_test_suggestion_after_loop")
         await _generate_stage(state, "test_suggestion")
     if not state.unit_test_generation_content:
-        await _replan_agent(state, "unit_test_missing_after_loop")
+        state.fallback_events.append("force_generate_unit_test_after_loop")
         await _generate_stage(state, "unit_test")
 
     state.execution_summary = await _build_execution_summary(state)

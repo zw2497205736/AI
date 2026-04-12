@@ -129,6 +129,21 @@ export function GithubAgentPage() {
     void loadTasks()
   }, [])
 
+  useEffect(() => {
+    if (!selectedTask) return
+    const shouldPoll =
+      selectedTask.status === 'queued' ||
+      selectedTask.status.startsWith('running')
+    if (!shouldPoll) return
+
+    const timer = window.setInterval(() => {
+      void loadTasks()
+      void loadTaskDetail(selectedTask.id)
+    }, 4000)
+
+    return () => window.clearInterval(timer)
+  }, [selectedTask])
+
   const completedCount = tasks.filter((task) => task.status === 'completed').length
   const runningCount = tasks.filter((task) => task.status.startsWith('running') || task.status === 'queued').length
   const failedCount = tasks.filter((task) => task.status === 'failed' || task.status === 'partial_completed').length
@@ -570,8 +585,11 @@ export function GithubAgentPage() {
                 <button
                   type="button"
                   onClick={async () => {
-                    await rerunAgentTask(selectedTask.id)
+                    const rerun = await rerunAgentTask(selectedTask.id)
                     await loadTasks()
+                    if (rerun?.id) {
+                      await loadTaskDetail(rerun.id)
+                    }
                   }}
                   className="rounded-2xl bg-text px-4 py-2.5 text-sm font-medium text-white shadow-sm"
                 >
