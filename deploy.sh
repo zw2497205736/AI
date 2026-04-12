@@ -45,7 +45,7 @@ if [ -f "${SERVER_PATH}/${PROJECT_NAME}.backend.env.bak" ]; then
 fi
 cd "${SERVER_PATH}/${PROJECT_NAME}"
 docker-compose down
-docker rm -f ai_backend_1 ai_frontend_1 ai_redis_1 2>/dev/null || true
+docker ps -a --format '{{.Names}}' | grep -E '(^|_)ai_(backend|frontend|redis)_1$|ai_(backend|frontend|redis)_1|backend|frontend|redis' | xargs -r docker rm -f 2>/dev/null || true
 docker-compose up -d --build
 docker-compose ps
 EOF
