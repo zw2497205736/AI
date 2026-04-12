@@ -8,6 +8,7 @@ export async function streamChat(
   onSession: (sessionId: string) => void,
   onSources?: (sources: MessageSource[]) => void,
   onRetrievalHit?: (retrievalHit: boolean) => void,
+  onError?: (message: string) => void,
   signal?: AbortSignal,
 ) {
   const url = `/api/chat/stream?query=${encodeURIComponent(query)}&session_id=${sessionId}`
@@ -24,22 +25,73 @@ export async function streamChat(
   const decoder = new TextDecoder()
   let buffer = ''
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue
-      const data = line.slice(6)
-      if (data === '[DONE]') return
-      const parsed = JSON.parse(data)
-      if (parsed.session_id) onSession(parsed.session_id)
-      if (parsed.content) onChunk(parsed.content)
+  const processEventBlock = (block: string) => {
+    const dataLines = block
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => line.slice(6))
+
+    if (dataLines.length === 0) return false
+
+    const data = dataLines.join('\n')
+    if (data === '[DONE]') return true
+
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(data) as Record<string, unknown>
+    } catch {
+      return false
+    }
+
+    const eventType = typeof parsed.type === 'string' ? parsed.type : ''
+
+    if (typeof parsed.session_id === 'string') onSession(parsed.session_id)
+
+    if (eventType === 'meta') {
+      return false
+    }
+
+    if (eventType === 'delta' && typeof parsed.delta === 'string') {
+      onChunk(parsed.delta)
+      return false
+    }
+
+    if (eventType === 'sources') {
       if (Array.isArray(parsed.sources) && onSources) onSources(parsed.sources as MessageSource[])
       if (typeof parsed.retrieval_hit === 'boolean' && onRetrievalHit) onRetrievalHit(parsed.retrieval_hit)
+      return false
     }
+
+    if (eventType === 'error' && typeof parsed.message === 'string') {
+      onError?.(parsed.message)
+      return false
+    }
+
+    if (eventType === 'done') {
+      return false
+    }
+
+    if (typeof parsed.content === 'string') onChunk(parsed.content)
+    if (Array.isArray(parsed.sources) && onSources) onSources(parsed.sources as MessageSource[])
+    if (typeof parsed.retrieval_hit === 'boolean' && onRetrievalHit) onRetrievalHit(parsed.retrieval_hit)
+    return false
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+
+    const eventBlocks = buffer.split('\n\n')
+    buffer = eventBlocks.pop() || ''
+    for (const block of eventBlocks) {
+      if (processEventBlock(block)) return
+    }
+
+    if (done) break
+  }
+
+  if (buffer.trim()) {
+    processEventBlock(buffer)
   }
 }
 

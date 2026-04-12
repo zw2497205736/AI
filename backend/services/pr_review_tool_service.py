@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any
 
 from sqlalchemy import select
@@ -9,6 +10,8 @@ from models.agent_task import AgentTask
 from models.github_repository import GitHubRepository
 from services.llm_service import get_chat_client, get_embedding_client
 from services.rag_service import filter_relevant_chunks, hybrid_retrieve
+
+logger = logging.getLogger(__name__)
 
 
 def build_pr_meta_tool_result(repo: GitHubRepository, pr_data: dict[str, Any], files: list[dict[str, Any]]) -> str:
@@ -34,8 +37,15 @@ async def search_review_knowledge(query: str) -> tuple[str, list[dict[str, Any]]
         return "未提供知识检索 query", []
     embedding_client = get_embedding_client()
     chat_client = get_chat_client()
-    raw_chunks = await hybrid_retrieve(query, embedding_client)
-    relevant_chunks = await filter_relevant_chunks(query, raw_chunks, chat_client)
+    try:
+        logger.warning("PR review knowledge search started: query=%s", query)
+        raw_chunks = await hybrid_retrieve(query, embedding_client)
+        logger.warning("PR review knowledge raw hit count: query=%s raw_chunks=%s", query, len(raw_chunks))
+        relevant_chunks = await filter_relevant_chunks(query, raw_chunks, chat_client)
+        logger.warning("PR review knowledge filtered hit count: query=%s relevant_chunks=%s", query, len(relevant_chunks))
+    except Exception as exc:
+        logger.exception("PR review knowledge search failed: query=%s", query)
+        return f"知识库检索失败，已跳过该步骤：{exc}", []
     if not relevant_chunks:
         return "未命中团队知识库规范。", []
     snippets = []

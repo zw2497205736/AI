@@ -148,6 +148,11 @@ export function ChatPage() {
         (retrievalHit) => {
           setLastAssistantRetrievalHit(targetSessionId, retrievalHit)
         },
+        (message) => {
+          if (message.trim()) {
+            appendToLastAssistant(targetSessionId, message)
+          }
+        },
         controller.signal,
       )
     } catch (error) {
@@ -161,6 +166,14 @@ export function ChatPage() {
         delete streamControllersRef.current[finalSessionId]
       }
       useChatStore.getState().setSessionStreaming(finalSessionId, false)
+      await getConversationMessages(finalSessionId)
+        .then((data) => {
+          setSessionMessages(finalSessionId, data.messages)
+          if (useChatStore.getState().sessionId === finalSessionId) {
+            setCurrentTitle(data.title)
+          }
+        })
+        .catch(() => undefined)
       const memories = await listMemories()
       const nextConversations = await listConversations()
       setMemories(memories)

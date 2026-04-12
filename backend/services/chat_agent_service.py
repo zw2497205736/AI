@@ -4,8 +4,8 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from services.chat_tool_service import build_agent_final_answer, execute_chat_tool, plan_chat_agent_step
-from services.llm_service import create_text_response
+from prompts.chat_agent_tool import AGENT_FINAL_RESPONSE_PROMPT
+from services.chat_tool_service import execute_chat_tool, format_tool_history, plan_chat_agent_step
 from services.memory_service import search_long_term_memories
 from services.rag_service import build_rag_prompt, filter_relevant_chunks, hybrid_retrieve
 from utils.query_rewriter import rewrite_query
@@ -47,24 +47,34 @@ async def _build_non_tool_answer(
             }
         )
         context_messages.append({"role": "user", "content": query})
-    full_response = await create_text_response(
-        model=settings.chat_model,
-        input_messages=context_messages,
-        max_output_tokens=2000,
-        temperature=0.7,
-    )
+    if chunks:
+        knowledge_points = []
+        for item in chunks[:3]:
+            snippet = " ".join(str(item.get("content") or "").split())
+            if len(snippet) > 220:
+                snippet = snippet[:220].rstrip() + "..."
+            knowledge_points.append(f"- 来自《{item.get('filename', '未命名文档')}》：{snippet}")
+        fallback_response = (
+            "我命中了知识库资料，但当前模型没有生成完整正文。先根据已检索到的资料给你一个简要说明：\n\n"
+            + "\n".join(knowledge_points)
+            + "\n\n如果你愿意，我可以继续基于这些资料换一种问法再回答。"
+        )
+    else:
+        fallback_response = "我暂时没有生成出完整回答，请你换一种问法，或者补充更具体的上下文。"
     return {
-        "response": full_response,
         "sources": chunks,
         "retrieval_hit": bool(chunks),
         "mode": "rag" if chunks else "general",
         "tool_history": [],
         "rewritten_query": rewritten_query,
         "raw_sources_count": len(raw_chunks),
+        "stream_messages": context_messages,
+        "max_output_tokens": 2000,
+        "fallback_response": fallback_response,
     }
 
 
-async def run_chat_agent(
+async def prepare_chat_agent_response(
     *,
     query: str,
     user_id: str,
@@ -107,11 +117,18 @@ async def run_chat_agent(
             retrieval_hit,
         )
         return {
-            "response": response,
             "sources": aggregated_sources,
             "retrieval_hit": retrieval_hit,
             "mode": "agent",
             "tool_history": tool_history,
+            "stream_messages": [
+                {
+                    "role": "user",
+                    "content": AGENT_FINAL_RESPONSE_PROMPT.format(query=query, tool_history=format_tool_history(tool_history)),
+                }
+            ],
+            "max_output_tokens": 1200,
+            "fallback_response": tool_history[-1].get("tool_result", "") or "当前没有查到相关数据。",
         }
 
     fallback = await _build_non_tool_answer(

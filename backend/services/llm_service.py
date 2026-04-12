@@ -79,12 +79,6 @@ def _extract_chat_content(message: dict) -> str:
         text = "".join(texts).strip()
         if text:
             return text
-
-    # Zhipu compatibility: some models may return only reasoning_content when
-    # the OpenAI-compatible payload does not populate message.content.
-    reasoning_content = message.get("reasoning_content")
-    if isinstance(reasoning_content, str):
-        return reasoning_content.strip()
     return ""
 
 
@@ -139,7 +133,13 @@ async def create_text_response(
     if not choices:
         return ""
     message = choices[0].get("message") or {}
-    return _extract_chat_content(message)
+    text = _extract_chat_content(message)
+    if text:
+        return text
+    reasoning_content = message.get("reasoning_content")
+    if isinstance(reasoning_content, str) and reasoning_content.strip():
+        logger.warning("Model returned reasoning_content without final content; suppressing reasoning output")
+    return ""
 
 
 async def stream_text_response(
@@ -195,7 +195,3 @@ async def stream_text_response(
                 content = delta.get("content")
                 if isinstance(content, str) and content:
                     yield content
-                    continue
-                reasoning_content = delta.get("reasoning_content")
-                if isinstance(reasoning_content, str) and reasoning_content:
-                    yield reasoning_content

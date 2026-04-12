@@ -6,7 +6,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     openai_user_agent: str = "agent/8.0"
-    chat_model: str = "glm-4.7-flash"
+    chat_model: str = "glm-4.5-air"
+    pr_agent_control_model: str = "glm-4.5-air"
+    pr_agent_generation_model: str = "glm-4.5-air"
     embedding_api_key: str = ""
     embedding_base_url: str = ""
     embedding_model: str = "embedding-3"
@@ -17,10 +19,11 @@ class Settings(BaseSettings):
     chunk_size: int = 512
     chunk_overlap: int = 50
     similarity_threshold: float = 0.8
-    bm25_top_k: int = 3
-    vector_top_k: int = 3
-    final_top_k: int = 5
+    bm25_top_k: int = 6
+    vector_top_k: int = 6
+    final_top_k: int = 8
     vector_min_score: float = 0.5
+    rag_neighbor_window: int = 1
 
     max_context_tokens: int = 32000
     summary_keep_rounds: int = 3

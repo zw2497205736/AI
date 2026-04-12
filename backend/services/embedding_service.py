@@ -102,9 +102,17 @@ async def add_chunks_to_store(doc_id: int, filename: str, chunks: list[str], cli
 
 
 async def vector_search(query: str, client: AsyncOpenAI, top_k: int, min_score: float) -> list[str]:
+    try:
+        collection_count = int(collection.count())
+    except Exception:
+        collection_count = 0
+    safe_top_k = max(0, min(top_k, collection_count)) if collection_count else top_k
+    if safe_top_k <= 0:
+        return []
+
     if HAS_LANGCHAIN and langchain_vector_store is not None:
         try:
-            results = await asyncio.to_thread(langchain_vector_store.similarity_search_with_score, query, top_k)
+            results = await asyncio.to_thread(langchain_vector_store.similarity_search_with_score, query, safe_top_k)
             chunks: list[str] = []
             max_distance = 1 - min_score
             for doc, distance in results:
@@ -117,11 +125,14 @@ async def vector_search(query: str, client: AsyncOpenAI, top_k: int, min_score: 
     if not query_embeddings:
         return []
     query_embedding = query_embeddings[0]
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=top_k,
-        include=["documents", "distances"],
-    )
+    try:
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=safe_top_k,
+            include=["documents", "distances"],
+        )
+    except Exception:
+        return []
     chunks: list[str] = []
     for doc, distance in zip(results["documents"][0], results["distances"][0]):
         score = 1 - distance
