@@ -1,124 +1,172 @@
-# 武大计算机学院校企合作 AI 研发协作平台
+# AI 研发协作平台
 
-面向团队研发协作场景的 AI 平台，围绕团队知识库问答、RAG 检索、多轮会话记忆、AI Code Review、GitHub PR 自动审查、对话式 ChatAgent 等能力进行设计与实现，服务于团队研发过程中的知识复用、代码审查、测试补充和日常协作查询等场景。
+一个面向团队研发流程的 AI 协作平台，覆盖知识库问答、会话记忆、手动 Code Review、GitHub PR 自动审查、任务追踪与仓库管理。
 
-项目已完成前后端一体化落地，部署在阿里云服务器。
+这个项目的重点不是“做一个聊天页面”，而是把研发团队里最常见、最琐碎、最依赖人工经验的几条链路真正打通：
 
-## 项目简介
-
-项目围绕两类研发痛点展开：
-
-- 团队研发流程中，代码审查、测试补充、PR 跟进依赖人工，效率低、标准不统一
-- 团队文档、项目经验和历史知识难以沉淀，知识复用和问答查询成本高
-
-围绕上述问题，平台提供两条核心能力链路：
-
-- 团队智能问答知识库：基于文档解析、语义分块、混合检索、短期记忆与长期记忆，支撑面向团队资料的 RAG 问答
-- GitHub PR 自动审查：基于 Webhook 触发审查任务，自动生成 Code Review、测试建议和单元测试建议
-
-在此基础上，聊天模块进一步实现了基于工具调用的 ChatAgent，可在对话中按需查询平台内数据、知识库内容以及 GitHub 相关协作信息。
+- 团队文档沉淀成可检索知识库
+- 多轮问答能记住上下文和用户偏好
+- 手动代码审查可以直接落地
+- GitHub PR 可以通过 Webhook 自动触发三阶段审查
 
 ## 项目亮点
 
-- 设计并落地团队智能问答知识库，支持文档上传、向量化存储、混合检索与 RAG 问答
-- 设计短期记忆机制，基于滑动窗口、摘要压缩与 Redis 存储，保障多轮对话上下文连贯
-- 设计长期记忆机制，基于结构化提取、向量化存储与语义召回，支撑个性化问答体验
-- 设计 GitHub PR 自动审查流程，支持私有仓库接入、Webhook 触发、PR 自动生成 Code Review、测试建议和单元测试建议
-- 设计并维护多套 Prompt，包括 Code Review、测试建议、单元测试生成、查询改写、工具调用等提示词，提高输出质量与稳定性
-- 实现对话式 ChatAgent，支持平台仓库、任务、文档、知识库等工具查询，并可结合知识库与通用能力完成回答
-- 前端提供统一工作台，支持仓库接入、任务筛选、审查结果展示、对话切换、知识库管理与 Markdown 渲染
+### 1. 不只是 RAG，而是完整的团队知识库链路
 
-## 功能模块
+- 支持 `txt / md / pdf / docx` 文档上传
+- PDF / DOCX 优先走 `MarkItDown` 解析，失败自动降级
+- 检索链路采用 `BM25 + 向量检索`
+- 支持查询改写、相关性筛选、来源卡片展示
+- 支持多轮追问、长期记忆与个性化上下文补充
 
-### 1. 团队知识库问答
+### 2. 文档分块做过多轮实战优化
 
-- 支持上传 `txt / pdf / docx` 文档
-- 文档自动解析、切分、向量化并写入知识库
-- 支持基于知识库内容的 RAG 问答
-- 支持知识库命中片段与来源展示
+这个项目里最难的一块不是“接个向量库”，而是把知识单元切对。
 
-### 2. 会话记忆系统
+做过的关键优化包括：
 
-- 短期记忆：滑动窗口 + 摘要压缩 + Redis 缓存
+- 从纯 token 分块升级为：
+  - 结构优先分块
+  - 语义感知二次切分
+  - 小块合并
+  - token 约束兜底
+- 针对“切得太碎导致回答只剩概述”的问题，继续补了：
+  - 邻接 chunk 补全
+  - 检索深度提升
+  - 相关性筛选回退
+
+目标是让系统尽量召回“完整知识单元”，而不是只召回标题和摘要。
+
+### 3. 做了真实可用的 ChatAgent，而不是纯问答 Prompt
+
+聊天模块不是简单的“问题 + 知识库 = 回答”，而是一个轻量 Agent：
+
+- 可以判断是直接回答还是调用工具
+- 能查询仓库、任务、文档、知识库
+- 支持 RAG 问答与平台内部数据查询结合
+- 模型空正文时有显式 fallback，不会把推理链直接暴露给前端
+
+### 4. GitHub PR 自动审查已经升级成单 Agent 架构
+
+支持：
+
+- 私有仓库接入
+- GitHub Webhook 自动触发
+- PR 三阶段输出：
+  1. Code Review
+  2. 测试建议
+  3. 单元测试建议 / 示例骨架
+
+PR Agent 当前不是简单串 Prompt，而是拆成：
+
+- Planner
+- Executor
+- Replanner
+- Reporter
+
+前端还支持展示：
+
+- 任务状态
+- 三阶段输出
+- Agent 执行轨迹
+- 工具调用记录
+- 重规划记录
+- 知识来源
+
+### 5. 解决过一堆真正的工程问题，而不是只停留在功能演示
+
+这个项目里处理过的实际问题包括：
+
+- embedding 模型切换后的维度冲突
+- 知识库切块过碎导致回答质量下降
+- 模型只返回 `reasoning_content` 不返回最终正文
+- 流式输出链路在模型、后端、Nginx、前端多层之间的不稳定
+- PR Agent 控制层 JSON 输出不稳定
+- 服务器环境变量被部署覆盖
+- 运行时数据与代码目录混在一起导致反复污染
+- 老版 `docker-compose` 重建容器时的 `ContainerConfig` 异常
+
+也正因为这些问题都踩过、修过，所以这不是一个“只会跑 demo”的项目，而是一个做过稳定性治理的项目。
+
+## 功能概览
+
+### 团队知识库问答
+
+- 文档上传、解析、分块、向量化
+- 知识库问答
+- 来源展示
+- 持续追问
+
+### 多轮会话与记忆
+
+- 短期记忆：滑动窗口 + 摘要压缩 + Redis
 - 长期记忆：结构化提取 + 向量化存储 + 语义召回
-- 支持历史会话切换、重命名、删除和持续追问
+- 会话切换、重命名、删除
 
-### 3. ChatAgent
+### 手动 Code Review
 
-- 面向研发协作场景的对话式 Agent
-- 支持按需调用平台内置工具
-- 支持知识库查询、仓库查询、任务查询、文档查询等能力
-- 支持在无知识库命中时退回通用回答
+- 输入代码或 Diff
+- 生成 Markdown 格式审查结果
+- 输出风险点、边界条件、改进建议
 
-### 4. AI Code Review
+### GitHub PR 自动审查
 
-- 支持输入代码或 Diff 进行审查
-- 支持 Markdown 结果展示
-- 支持输出逻辑问题、边界风险、可维护性建议与修复建议
+- 接入 GitHub 仓库
+- Webhook 自动触发
+- 三阶段审查输出
+- 任务状态流转
+- Agent Trace 展示
 
-### 5. GitHub PR 自动审查
+## 项目难点
 
-- 支持私有仓库接入
-- 支持 GitHub Webhook
-- 支持 `opened / reopened / synchronize` 事件自动触发
-- 自动生成三阶段审查结果：
-  - Code Review
-  - 测试建议
-  - 单元测试建议 / 示例代码
-- 支持任务状态流转、时间戳、失败提示与结果持久化
+这个项目真正难的地方不在“页面多”，而在下面几条链路的工程稳定性：
 
-## 页面说明
+### 1. RAG 质量不是靠接个向量库就能解决
 
-### 登录页
+真正难点在于：
 
-- 用户注册 / 登录
-- 登录后自动加载会话、知识库、仓库和任务数据
+- 文档解析质量
+- 分块是否保留完整语义单元
+- 检索是否能拿到真正有用的 chunk
+- 生成时如何避免“命中了资料但回答仍然很空”
 
-### 智能问答页
+### 2. Agent 最难的不是会不会“思考”，而是稳不稳定
 
-- 多轮对话
-- 历史会话切换
-- RAG 问答
-- ChatAgent 工具查询
-- 长期记忆展示
+PR Agent 这条链路里，模型既要：
 
-### 知识库页
+- 理解 diff
+- 决定下一步动作
+- 严格输出 JSON
+- 生成可读 Markdown
 
-- 文档上传
-- 文档列表展示
-- 文档状态查看
-- 文档删除
+这类系统最容易死在“格式不稳定”上，所以项目里专门做了：
 
-### Code Review 页
+- 控制层 / 生成层模型拆分
+- JSON 失败兜底
+- 阶段缺失补生成
+- 执行轨迹可视化
 
-- 输入代码 / Diff
-- 流式输出审查结果
-- Markdown 渲染展示
+### 3. 真正上线后，部署和数据治理比功能本身更容易出坑
 
-### GitHub Agent 页
+项目后期重点做了三件事：
 
-- 仓库接入与使用说明
-- 已接入仓库列表
-- 任务队列与状态筛选
-- 审查结果分阶段展示
+- 配置与代码分离
+- 运行时数据与代码分离
+- 部署脚本避免覆盖服务器 `.env` 和运行数据
 
-### 设置页
-
-- 模型配置
-- API 地址配置
-- LLM / Embedding 连通性测试
+这部分是项目从“能跑”走向“能维护”的关键。
 
 ## 技术栈
 
 ### 后端
 
 - FastAPI
-- LangChain
 - SQLAlchemy + SQLite
 - Redis
 - ChromaDB
-- httpx
+- LangChain Chroma / Text Splitters
 - OpenAI Compatible API
+- MarkItDown
 
 ### 前端
 
@@ -126,6 +174,7 @@
 - TypeScript
 - Vite
 - Tailwind CSS
+- Zustand
 - React Markdown
 
 ### 部署
@@ -134,131 +183,55 @@
 - Docker Compose
 - Shell 一键部署脚本
 
-## 核心实现
+## 当前架构重点
 
-### 1. RAG 检索链路
+### 知识库链路
 
-项目知识库问答链路包括：
+`文档上传 -> 文档解析 -> 结构化分块 -> 向量化 -> 混合检索 -> 相关性筛选 -> 构建上下文 -> 最终回答`
 
-1. 用户问题输入
-2. 查询改写
-3. 文档语义分块
-4. 混合检索
-5. 结果融合
-6. 构建上下文 Prompt
-7. 生成最终回答
+### PR 审查链路
 
-当前实现采用：
-
-- `TokenTextSplitter` 做文档分块
-- Chroma 做向量存储与召回
-- BM25 + 向量检索做混合检索
-- 改写问题与原问题双路召回降低漏检索风险
-- 检索结果相关性过滤，避免无关片段误命中
-
-### 2. 会话记忆机制
-
-短期记忆部分：
-
-- 使用滑动窗口管理近轮对话
-- 当上下文过长时自动摘要压缩
-- 使用 Redis 持久化短期上下文
-
-长期记忆部分：
-
-- 从对话中提取结构化用户信息
-- 通过向量化存储实现长期沉淀
-- 在后续问答中基于语义相似度召回相关偏好和历史信息
-
-### 3. ChatAgent
-
-聊天模块实现了完整的 ChatAgent 调度逻辑，能够在问答过程中自主判断：
-
-- 直接回答
-- 查询知识库
-- 查询平台内仓库 / 任务 / 文档数据
-- 调用 GitHub 相关查询工具
-
-Agent 当前支持的工具包括：
-
-- 已接入仓库查询
-- 最近任务查询
-- 任务详情查询
-- 文档列表查询
-- 知识库搜索
-- GitHub PR 查询
-- GitHub PR 文件变更查询
-
-说明：
-
-- 平台内部状态查询采用内置工具实现
-- GitHub 实时协作信息查询支持接入 GitHub MCP 能力，并保留现有 GitHub API 回退链路
-
-### 4. GitHub PR 自动审查工作流
-
-PR 自动审查流程如下：
-
-1. 用户接入 GitHub 私有仓库
-2. 配置 Webhook
-3. PR 事件触发审查任务
-4. 后端拉取 PR 信息与文件差异
-5. 构建审查 Prompt
-6. 分阶段执行审查
-7. 前端展示任务状态与结果
-
-当前审查范围基于 PR 全量 Diff，而不是仅最近一次提交。
-
-### 5. Prompt 体系
-
-项目将 Prompt 从业务代码中拆分为独立目录统一维护，当前包括：
-
-- Code Review Prompt
-- GitHub Agent Prompt
-- 测试建议 Prompt
-- 单元测试生成 Prompt
-- RAG Prompt
-- 记忆提取 Prompt
-- 查询改写 Prompt
-- Tool / Agent Prompt
+`GitHub Webhook -> 创建任务 -> 拉取 PR 信息与 diff -> Planner -> Executor -> 知识检索 -> 三阶段生成 -> Reporter -> 前端展示`
 
 ## 项目结构
 
 ```text
 AI/
 ├── backend/
-│   ├── prompts/              # Prompt 独立目录
-│   ├── routers/              # 路由层
-│   ├── services/             # 业务逻辑层
-│   ├── models/               # 数据模型
-│   ├── schemas/              # 请求 / 响应结构
-│   ├── utils/                # 工具方法
-│   ├── config.py             # 配置项
+│   ├── models/
+│   ├── prompts/
+│   ├── routers/
+│   ├── schemas/
+│   ├── services/
+│   ├── utils/
+│   ├── config.py
 │   └── .env.example
 ├── frontend/
-│   ├── src/pages/            # 页面
-│   ├── src/components/       # 组件
-│   ├── src/api/              # 接口封装
-│   └── src/store/            # 状态管理
-├── deploy.sh                 # 一键部署
-├── deploy_backend_only.sh    # 仅后端部署
-├── setup_ssh_key.sh          # 免密 SSH 配置
-└── docker-compose.yml
+│   ├── src/api/
+│   ├── src/components/
+│   ├── src/pages/
+│   ├── src/store/
+│   └── src/types/
+├── docker-compose.yml
+├── deploy.sh
+├── deploy_backend_only.sh
+└── DEPLOYMENT.md
 ```
 
 ## 本地启动
 
-### 启动后端
+### 后端
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 uvicorn main:app --reload --port 8000 --workers 1
 ```
 
-### 启动前端
+### 前端
 
 ```bash
 cd frontend
@@ -266,108 +239,47 @@ npm install
 npm run dev
 ```
 
-默认访问地址：
+## 部署
 
-- 前端：`http://localhost:3000`
-- 后端：`http://localhost:8000`
-
-## Docker 启动
+### 只部署 backend
 
 ```bash
-cp backend/.env.example backend/.env
-docker-compose up -d
+./deploy_backend_only.sh
 ```
 
-## 推荐模型配置
-
-当前可运行配置示例：
-
-```bash
-APP_SECRET_KEY=一段固定不变的随机密钥
-OPENAI_API_KEY=你的智谱API Key
-OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-OPENAI_USER_AGENT=agent/8.0
-CHAT_MODEL=glm-4.7
-EMBEDDING_MODEL=embedding-3
-REQUEST_TIMEOUT=180
-LLM_RETRY_ATTEMPTS=3
-EMBEDDING_BATCH_SIZE=32
-```
-
-补充说明：
-
-- `APP_SECRET_KEY` 用于登录态、GitHub Token 等本地加密
-- 聊天与 Agent 回答走 `chat/completions`
-- 向量检索和记忆走 `embeddings`
-
-如需为 Embedding 单独配置兼容供应商，也支持：
-
-```bash
-EMBEDDING_API_KEY=你的兼容供应商Key
-EMBEDDING_BASE_URL=https://你的兼容供应商地址/v1
-EMBEDDING_MODEL=text-embedding-v3
-```
-
-## 一键部署
-
-### 首次部署
-
-```bash
-chmod +x setup_ssh_key.sh deploy.sh
-./setup_ssh_key.sh
-```
-
-### 正常部署
+### 部署前后端
 
 ```bash
 ./deploy.sh
 ```
 
-### 仅部署后端
+## 运维原则
 
-```bash
-chmod +x deploy_backend_only.sh
-./deploy_backend_only.sh
-```
+当前项目已经明确分层：
 
-### 临时覆盖服务器信息
+- 本机改代码
+- 服务器改 `.env`
+- 运行时数据放 Docker Volume
+- 部署包不覆盖服务器配置和运行数据
 
-```bash
-SERVER_USER=root SERVER_HOST=101.133.137.152 SERVER_PATH=/root ./deploy.sh
-```
+详细运维说明见：
 
-## GitHub Webhook 配置
+- [DEPLOYMENT.md](/Users/zhaowei/Documents/就业/AI项目/AI/DEPLOYMENT.md)
 
-接入仓库后，前端会生成对应的 Webhook URL，在 GitHub 仓库中完成如下配置：
+## 当前经验结论
 
-1. 进入 `Settings -> Webhooks`
-2. 点击 `Add webhook`
-3. 填入平台提供的 `Webhook URL`
-4. 填入页面配置的 `webhook_secret`
-5. Content type 选择 `application/json`
-6. 事件选择 `Pull requests`
+这个项目做到现在，最大的经验不是“某个模型最强”，而是：
 
-支持触发的事件：
+- 生产主链路优先稳定，不优先追求最强模型
+- RAG 质量高度依赖解析、分块、检索策略
+- Agent 成败取决于状态机、兜底和可观测性，不取决于“会不会思考”
+- 配置、代码、数据如果不分离，后面一定反复踩坑
 
-- `opened`
-- `reopened`
-- `synchronize`
+如果你想快速理解这个项目，建议优先看：
 
-说明：
-
-- 只有已打开 PR 的对应分支产生新提交时，才会触发 `synchronize`
-
-## 当前已实现能力总结
-
-- 用户注册 / 登录
-- 团队知识库问答
-- RAG 检索
-- 多轮会话管理
-- 短期记忆
-- 长期记忆
-- ChatAgent 工具调用
-- 文档上传与知识库管理
-- AI Code Review
-- GitHub PR 自动审查
-- 仓库接入与 Webhook 联动
-- Docker 部署与服务器在线运行
+1. `README.md`
+2. `DEPLOYMENT.md`
+3. `backend/services/rag_service.py`
+4. `backend/services/chat_agent_service.py`
+5. `backend/services/pr_review_agent_service.py`
+6. `backend/prompts/README.md`
