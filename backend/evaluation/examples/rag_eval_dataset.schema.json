@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RAG Evaluation Dataset",
+  "type": "object",
+  "required": ["dataset_name", "samples"],
+  "properties": {
+    "dataset_name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "default": "v1"
+    },
+    "samples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sample_id", "question", "gold_answer"],
+        "properties": {
+          "sample_id": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "question_type": {
+            "type": "string",
+            "enum": ["fact", "explanation", "process", "locate", "other"],
+            "default": "other"
+          },
+          "gold_answer": {
+            "type": "string"
+          },
+          "gold_chunks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "filename": {
+                  "type": "string"
+                },
+                "content_substring": {
+                  "type": "string"
+                },
+                "chunk_index": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": false
+            },
+            "default": []
+          },
+          "metadata": {
+            "type": "object",
+            "default": {}
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

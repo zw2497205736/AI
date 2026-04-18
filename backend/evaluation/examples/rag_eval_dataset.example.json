@@ -1,0 +1,37 @@
+{
+  "dataset_name": "rag-eval-dev",
+  "version": "v1",
+  "samples": [
+    {
+      "sample_id": "sample-001",
+      "question": "系统支持哪些文档格式？",
+      "question_type": "fact",
+      "gold_answer": "系统支持 txt、md、pdf、docx 文档上传。",
+      "gold_chunks": [
+        {
+          "filename": "README.md",
+          "content_substring": "txt / md / pdf / docx"
+        }
+      ],
+      "metadata": {
+        "source": "manual"
+      }
+    },
+    {
+      "sample_id": "sample-002",
+      "question": "PR 自动审查 Agent 有哪些角色？",
+      "question_type": "fact",
+      "gold_answer": "PR 自动审查 Agent 包含 Planner、Executor、Replanner、Reporter 四个角色。",
+      "gold_chunks": [
+        {
+          "filename": "README.md",
+          "content_substring": "Planner / Executor / Replanner / Reporter"
+        }
+      ],
+      "metadata": {
+        "source": "manual"
+      }
+    }
+  ]
+}
+

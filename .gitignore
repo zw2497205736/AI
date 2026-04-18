@@ -18,6 +18,7 @@ frontend/dist/
 backend/.env
 backend/app.db
 backend/chroma_db/
+backend/evaluation/output/
 
 # Common local backups
 backups/
