@@ -1,377 +1,559 @@
-# 武大计算机学院校企合作 AI 研发协作平台
+# PR Review Harness Agent Platform
 
-> 一个面向研发协作场景的 AI 平台，重点解决团队知识检索、会话记忆、Code Review 和 GitHub PR 自动审查问题。  
-> 我重点完成了 RAG 知识库问答闭环与 Agent 化 PR 审查闭环。  
-> 项目价值在于：可追溯回答、可治理 Agent、真实工程问题优化，而不是单纯的大模型接入。
+> 一个面向 GitHub PR 审查场景的工程化 Harness Agent 系统。  
+> 核心不是“调用大模型生成 Review”，而是把 LLM、工具、状态、评估、恢复、告警和人工接管组合成一套稳定可运营的研发智能体框架。
 
-面向研发协作场景的一体化 AI 平台，围绕团队知识库问答、会话记忆、Code Review 和 GitHub PR 自动审查，打通了从文档解析、RAG 检索增强到 Agent 调度执行的完整闭环。
+本项目已经从普通 AI 平台演进为 **PR Review Harness Agent**：
 
-这个项目的重点不是做一个普通聊天页面，而是把研发团队中的高频工作流真正工程化落地：让团队文档可检索、回答结果可追溯、审查流程可自动化、Agent 执行过程可观测，并通过配置治理与部署治理，逐步把“能跑的 Demo”做成“可复用、可迭代的平台能力”。
+- 不是简单 Prompt
+- 不是一次性代码审查脚本
+- 不是只接入大模型 API
+- 而是一个具备 **上下文治理、工具调用、执行编排、状态记忆、离线评估、线上观测、错误恢复、人工接管、告警运营** 的 Agent Harness
 
----
-
-## 项目价值
-
-这个项目解决的是研发协作中的三个高频问题：
-
-- 团队文档分散，知识难检索、难复用
-- 多轮沟通缺少上下文延续，历史偏好无法沉淀
-- Code Review 和 PR 审查高度依赖人工，效率低且过程不可追踪
-
-围绕这些问题，项目形成了 4 条已经打通的核心链路：
-
-- 团队知识库问答
-- 多轮会话与记忆
-- 手动 Code Review
-- GitHub PR 自动审查
-
-相比“接一个大模型接口”的简单集成，这个项目更强调两类能力：
-
-- **RAG 工程能力**：文档解析、分块优化、混合检索、来源追溯、记忆增强
-- **Agent 平台能力**：状态机控制、工具调度、异常兜底、轨迹可视化、链路治理
+当前 Harness 核心能力完成度：**98%+**。
 
 ---
 
-## 项目速览
+## 1. 项目定位
 
-### 做了什么
+这个项目的核心定位是：
 
-- 搭建团队知识库问答全链路：解析、分块、向量化、混合检索、来源展示
-- 实现短期记忆与长期记忆机制，支持多轮对话上下文延续
-- 将聊天模块升级为支持工具调用的 ChatAgent，而不是纯 Prompt 问答
-- 将 GitHub PR 审查升级为 Agent 化链路，支持 Planner / Executor / Replanner / Reporter 四角色编排
-- 支持三阶段产出：Code Review、测试建议、单元测试建议 / 示例骨架
-- 前端可展示任务状态、阶段结果、Agent Trace、工具调用记录、重规划记录和知识来源
+> **用 Harness Engineering 的方式，把 GitHub PR Review 从“模型生成文本”升级为“可治理、可恢复、可评估、可运营的 Agent 系统”。**
 
-### 项目价值
+它解决的不是单点模型能力问题，而是 Agent 工程化问题：
 
-- 不是简单接向量库，而是围绕真实问答质量做过多轮 RAG 优化
-- 不是简单串几个 Prompt，而是把 PR 审查做成了可调度、可观测、可治理的 Agent 工作流
-- 不只是做功能，还处理了 embedding 维度冲突、空正文输出、JSON 不稳定、部署污染等真实工程问题
-- 不只是能演示，而是具备持续迭代和长期维护的工程基础
-
----
-
-## 核心亮点
-
-### 1. RAG 不是简单接向量库，而是完整问答链路落地
-
-项目支持 `txt / md / pdf / docx` 文档上传，并完成了解析、分块、向量化、检索增强和回答生成的全链路实现：
-
-- PDF / DOCX 优先使用 `MarkItDown` 解析，失败自动降级
-- 检索采用 `BM25 + 向量检索`
-- 支持查询改写、相关性筛选、来源卡片展示
-- 支持多轮追问、短期记忆和长期记忆
-- 命中知识库时返回来源，增强回答可解释性
-
-这部分的目标不是“能检索”，而是让系统尽可能回答出“文档里到底怎么做”，并且让答案有出处、可验证。
-
-### 2. 文档分块做过多轮质量优化
-
-项目针对 RAG 中最关键的“知识单元切分”做了多轮迭代，而不是直接使用默认切块策略。
-
-围绕“切块太粗召回不准”和“切块太碎答案不完整”两个问题，逐步优化为：
-
-- 结构优先分块
-- 语义边界二次切分
-- 小块合并
-- token 上限兜底
-- 检索后补相邻 chunk，恢复更完整的知识单元
-
-这部分优化直接影响真实问答质量，也是项目里最有工程含量的 RAG 能力之一。
-
-### 3. 聊天模块实现的是 ChatAgent，而不是纯 Prompt 问答
-
-聊天链路并不是单轮 Prompt 拼接，而是实现了轻量化的 ChatAgent 能力：
-
-- 能判断是直接回答还是调用工具
-- 支持知识库、文档、任务、仓库等平台内数据查询
-- 命中知识库时返回来源
-- 模型空正文时提供 fallback，不把异常结果直接暴露给前端
-
-这使聊天模块从“问一句答一句”升级为“可调用平台能力的智能入口”。
-
-### 4. GitHub PR 自动审查具备 Agent 化调度能力
-
-PR 自动审查不是简单串几个 Prompt，而是拆成四个角色：
-
-- Planner
-- Executor
-- Replanner
-- Reporter
-
-同时支持三阶段输出：
-
-1. Code Review
-2. 测试建议
-3. 单元测试建议 / 示例骨架
-
-前端支持展示：
-
-- 任务状态
-- 三阶段结果
-- Agent 执行轨迹
-- 工具调用记录
-- 重规划记录
-- 知识来源
-
-这条链路的重点不只是“生成审查意见”，而是把审查任务做成可追踪、可回放、可调试的 Agent 工作流。
+| 传统 PR Review AI | 本项目 Harness Agent |
+| --- | --- |
+| 一次性 Prompt 生成 | 多阶段执行编排 |
+| 只看 diff | 风险排序 + 文件摘要 + 工具上下文 + 历史记忆 |
+| 模型失败就失败 | 错误分类 + 降级重试 + checkpoint/resume |
+| 结果不可解释 | agent_trace 全链路可观测 |
+| 无法判断质量 | 离线 eval + LLM Judge + A/B compare |
+| 无运营闭环 | dashboard + alert + manual_handoff |
 
 ---
 
-## Agent 工程化设计
-
-Agent 平台最重要的不是把模型接上，而是把不确定的模型能力工程化，做成一个可复用、可治理、可迭代的系统。
-
-### 1. 把模型输出变成系统状态机
-
-在 PR 审查链路中，我没有让模型自由生成全部结果，而是把任务拆成 Planner、Executor、Replanner、Reporter 四类角色，并明确阶段、动作、工具和状态流转。
-
-这意味着系统不是依赖模型“一次性生成正确答案”，而是把复杂任务拆成多步受控执行过程，从而降低链路失控和结果漂移的概率。
-
-### 2. 把不稳定输出工程化处理
-
-项目中实际遇到过很多典型问题：
-
-- 只返回 `reasoning_content`
-- 不返回最终正文
-- JSON 解析失败
-- 某个阶段空结果
-- 返回内容可读性差，无法直接展示
-
-针对这些问题，我没有停留在“换模型”或“改 Prompt”，而是补齐了多层兜底：
-
-- JSON 失败兜底
-- 阶段缺失补生成
-- fallback 文案
-- 空结果不直接暴露给前端
-- 控制层与展示层之间增加异常拦截
-
-目标不是追求模型永不出错，而是保证系统即使在模型不稳定时，仍然可以输出可展示、可解释、可恢复的结果。
-
-### 3. 把 Agent 做成可治理链路
-
-为了避免 Agent 成为黑盒流程，项目增加了多种治理能力：
-
-- 工具白名单
-- 阶段白名单
-- 规则 fallback
-- 执行轨迹落库
-- 前端展示 Agent Trace、工具调用、重规划记录、兜底事件
-
-这意味着系统不仅能输出结果，还能解释“为什么这样执行”“中间调用了什么”“在哪一步发生了偏差”，便于调试、复盘和后续迭代。
-
-### 4. 把模型能力和业务能力解耦
-
-项目不是把所有逻辑都堆到一个 Prompt 里，而是逐步做了职责拆分：
-
-- 控制层与生成层职责拆分
-- PR Agent 双模型配置
-- RAG、聊天、PR 审查按链路拆开治理
-
-这样做的价值在于：模型能力不再直接等于业务能力，平台可以针对不同链路分别优化稳定性、成本和效果，把“模型能力”沉淀成“平台能力”。
-
-### 5. 把一次性 Demo 做成可迭代系统
-
-为了支持长期维护和持续优化，项目还做了很多底层工程支撑：
-
-- Prompt 独立目录化管理
-- 配置、代码、数据分离
-- 部署脚本稳定化
-- 日志补强
-- 文档解析与分块策略持续演进
-
-这些内容虽然不一定直接体现在页面上，但它们决定了系统能否长期稳定运行、持续迭代。
-
----
-
-## 项目难点与解决思路
-
-### 难点 1：RAG 真正难的是“知识单元切对”，不是“接个向量库”
-
-项目最大的难点之一，是让知识库真正回答“文档里怎么做的”，而不是只答出标题和摘要。
-
-解决思路：
-
-- 优化文档解析质量
-- 重构分块策略
-- 增强检索深度
-- 对检索结果做相关性筛选和邻接补全
-
-### 难点 2：Agent 最难的不是“会不会思考”，而是“稳不稳定”
-
-PR Agent 链路里，模型既要理解 diff，又要稳定输出 JSON，还要生成可读的 Markdown。
-
-解决思路：
-
-- 状态机收紧
-- 工具调用白名单
-- 阶段补生成
-- 失败兜底
-- Agent Trace 可视化
-- 控制层与生成层模型拆分
-
-### 难点 3：部署与数据治理比功能本身更容易踩坑
-
-项目后期的重点之一，不是继续堆功能，而是把代码、配置、运行时数据严格分开。
-
-解决思路：
-
-- 本机只改代码
-- 服务器只改环境配置
-- `.env` 不跟部署包走
-- SQLite / Chroma / Redis 数据不与代码目录混放
-- 部署脚本自动清理残留容器并保留服务器配置
-
----
-
-## 离线评估补充
-
-为了让 RAG 优化不只停留在“主观感觉变好了”，项目补充了一套**离线评估链路**，把评估拆成检索层、生成层和端到端层，分别看不同问题。
-
-位置：
-
-- `backend/evaluation/`
-
-评估逻辑：
-
-- 先加载评测集，读取问题、标准答案和标注的 gold chunks
-- 检索层先跑知识库召回，再计算 `Recall@5 / Precision@5 / HitRate@5 / MRR`
-- 生成层基于检索上下文生成答案，再结合 `RAGAs` 或 `LLM as Judge` 评估 `Faithfulness / Answer Relevance / Context Relevance`
-- 端到端层从用户视角评估最终答案，计算语义相似度，并可选补充正确性 Judge
-- 最后输出统一评测报告，汇总总体指标、逐样本结果、模型答案和命中上下文
-
-### 离线评估流程图
+## 2. Harness Agent 总体架构
 
 ```mermaid
-flowchart LR
-  A["评测集<br/>问题 + 标准答案 + Gold Chunks"] --> B["加载数据集"]
-  B --> C["检索层<br/>Hybrid Retrieve + Relevant Filter"]
-  C --> D["检索指标计算<br/>Recall@5 / Precision@5 / HitRate@5 / MRR"]
-  C --> E["生成层<br/>基于命中上下文生成答案"]
-  E --> F["生成质量评估<br/>RAGAs / LLM as Judge"]
-  E --> G["端到端评估<br/>语义相似度 / Correctness Judge"]
-  D --> H["评测报告汇总"]
-  F --> H
-  G --> H
-  H --> I["输出 JSON Report<br/>Summary + Per Sample Results"]
+flowchart TB
+    subgraph Input["输入层"]
+        GH["GitHub Webhook"]
+        PR["PR Meta / Diff / Files"]
+        User["用户任务 / Rerun"]
+    end
+
+    subgraph Harness["PR Review Harness Agent"]
+        Context["Level 1<br/>上下文管理"]
+        Tools["Level 2<br/>工具系统"]
+        Orchestration["Level 3<br/>执行编排"]
+        Memory["Level 4<br/>状态与记忆"]
+        Eval["Level 5<br/>评估与观测"]
+        Recovery["Level 6<br/>约束与恢复"]
+    end
+
+    subgraph LLM["模型层"]
+        Planner["Planner"]
+        Executor["Executor"]
+        Replanner["Replanner"]
+        Generator["Stage Generator"]
+        Reporter["Reporter"]
+    end
+
+    subgraph External["外部能力"]
+        GitHubAPI["GitHub API"]
+        RAG["Team Knowledge / RAG"]
+        DB["AgentTask / RepoReviewMemory"]
+        Alert["Generic / Slack / Feishu Webhook"]
+    end
+
+    subgraph Output["输出层"]
+        Review["Code Review"]
+        Test["测试建议"]
+        Unit["单元测试建议"]
+        Trace["Agent Trace"]
+        Dashboard["Dashboard"]
+        Handoff["Manual Handoff"]
+    end
+
+    GH --> PR --> Context
+    User --> Orchestration
+    Context --> Orchestration
+    Orchestration --> Planner
+    Orchestration --> Executor
+    Executor --> Tools
+    Tools --> GitHubAPI
+    Tools --> RAG
+    Tools --> DB
+    Executor --> Generator
+    Generator --> Review
+    Generator --> Test
+    Generator --> Unit
+    Replanner --> Orchestration
+    Reporter --> Trace
+    Memory --> DB
+    Eval --> Dashboard
+    Recovery --> Handoff
+    Handoff --> Alert
 ```
 
 ---
 
-## 核心架构图
-
-### 1. PR Agent Code Review 架构图
+## 3. Harness Engineering 六层模型
 
 ```mermaid
 flowchart LR
-  subgraph Request["输入"]
-    A1["PR 事件触发"]
-    A2["PR 元信息"]
-    A3["Diff / 文件变更"]
-    A4["团队审查规范"]
-  end
-
-  subgraph Agent["PR Review Agent"]
-    B1["Digest<br/>解析 PR 状态与变更范围"]
-    B2["Planner<br/>识别审查重点并制定计划"]
-    B3["Executor<br/>决定工具调用或阶段生成"]
-    B4{"下一步动作?"}
-    B5["Replanner<br/>处理失败、停滞与缺失阶段"]
-    B6["Reporter<br/>汇总执行轨迹"]
-  end
-
-  subgraph Context["工具与上下文"]
-    C1["读取 PR 信息"]
-    C2["读取代码 Diff"]
-    C3["检索团队规范"]
-    C4["参考历史任务"]
-  end
-
-  subgraph Stages["阶段产出"]
-    D1["Code Review"]
-    D2["测试建议"]
-    D3["单元测试方案<br/>+ 至少 1 个样例骨架"]
-  end
-
-  subgraph Result["结果"]
-    E1["三阶段审查结果"]
-    E2["Agent Trace"]
-    E3["工具调用记录"]
-    E4["失败兜底与重规划记录"]
-    E5["任务详情页展示"]
-  end
-
-  A1 --> A2 --> B1
-  A3 --> B1
-  A4 --> C3
-  B1 --> B2 --> B3 --> B4
-  B4 -- 调用工具 --> C1 --> B3
-  B4 -- 调用工具 --> C2 --> B3
-  B4 -- 调用工具 --> C3 --> B3
-  B4 -- 调用工具 --> C4 --> B3
-  B4 -- 生成阶段 --> D1 --> B3
-  B4 -- 生成阶段 --> D2 --> B3
-  B4 -- 生成阶段 --> D3 --> B3
-  B4 -- 失败 / 缺失 --> B5 --> B3
-  B4 -- 完成 --> B6
-  D1 --> E1
-  D2 --> E1
-  D3 --> E1
-  B6 --> E2
-  C1 --> E3
-  C2 --> E3
-  C3 --> E3
-  C4 --> E3
-  B5 --> E4
-  E1 --> E5
-  E2 --> E5
-  E3 --> E5
-  E4 --> E5
+    L1["L1 Context<br/>上下文管理"] --> L3["L3 Orchestration<br/>执行编排"]
+    L2["L2 Tools<br/>工具系统"] --> L3
+    L3 --> LLM["LLM Core"]
+    LLM --> L4["L4 State & Memory<br/>状态与记忆"]
+    L4 --> L5["L5 Evaluation & Observability<br/>评估与观测"]
+    L5 --> L6["L6 Guardrails & Recovery<br/>约束与恢复"]
+    L6 --> L3
 ```
 
-### 2. RAG 知识库问答架构图
+| 层级 | 目标 | 当前能力 |
+| --- | --- | --- |
+| Level 1 上下文管理 | 控制模型看到什么 | 风险排序、文件级摘要、阶段预算、降级上下文、知识上下文、仓库记忆 |
+| Level 2 工具系统 | 控制模型能调用什么 | PR meta、diff、commits、checks、issue、code search、依赖上下文、跨 PR 关联、RAG |
+| Level 3 执行编排 | 控制下一步做什么 | Planner / Executor / Replanner / Reporter、状态机、阶段生成、checkpoint/resume |
+| Level 4 状态与记忆 | 控制系统记住什么 | AgentTask、agent_trace、repo-level memory、阶段 checkpoint |
+| Level 5 评估与观测 | 控制如何判断好坏 | 离线 eval、LLM Judge、A/B compare、observability trace、dashboard |
+| Level 6 约束与恢复 | 控制失败后怎么办 | 幂等、错误分类、恢复策略矩阵、降级重试、人工接管、告警、告警去重 |
+
+---
+
+## 4. PR Review Agent 执行流程
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub
+    participant API as FastAPI Router
+    participant DB as AgentTask DB
+    participant Agent as PR Review Agent
+    participant Tools as Tool System
+    participant LLM as LLM
+    participant Alert as Alert Webhook
+
+    GH->>API: pull_request webhook
+    API->>DB: 幂等检查 repo + PR + head_sha
+    API->>DB: 创建 queued task
+    API->>Agent: 后台启动任务
+
+    Agent->>Tools: 获取 PR meta / files / diff
+    Agent->>LLM: Planner 生成计划
+    Agent->>Tools: 调用知识库 / checks / commits / issue / code search
+    Agent->>LLM: 生成 Code Review
+    Agent->>DB: 写入 checkpoint
+    Agent->>LLM: 生成测试建议
+    Agent->>DB: 写入 checkpoint
+    Agent->>LLM: 生成单元测试建议
+    Agent->>DB: 写入 checkpoint
+    Agent->>LLM: Reporter 汇总执行摘要
+
+    alt 生成失败
+        Agent->>Agent: 错误分类
+        Agent->>LLM: 降级上下文重试
+        Agent->>DB: 写入 error_events / fallback_events
+    end
+
+    alt 需要人工接管
+        Agent->>DB: 写入 manual_handoff / alert
+        Agent->>Alert: 发送告警
+        Agent->>DB: 写入 alert_delivery
+    end
+
+    Agent->>DB: completed / partial_completed / failed
+```
+
+---
+
+## 5. 上下文管理：从“塞 diff”到“上下文治理”
+
+PR Review 最容易失败的地方不是模型不会说，而是上下文给得不对。
+
+本项目的上下文管理目标是：
+
+> 让模型看到最有审查价值的信息，而不是把所有内容无差别塞进去。
+
+```mermaid
+flowchart TB
+    Diff["PR Diff"] --> RiskSort["风险文件排序"]
+    RiskSort --> FileSummary["文件级摘要"]
+    FileSummary --> StageBudget["分阶段预算"]
+    StageBudget --> Prompt["Stage Prompt"]
+
+    Knowledge["团队知识库"] --> Prompt
+    ToolHistory["工具调用历史"] --> Prompt
+    RepoMemory["仓库历史经验"] --> Prompt
+    Checks["PR checks / commits / issue"] --> Prompt
+```
+
+关键能力：
+
+- PR 文件风险排序
+- diff 长度预算
+- 文件级摘要
+- review / test / unit test 不同上下文视图
+- 工具上下文分区
+- 知识库上下文分区
+- repo-level memory 注入
+- 降级重试上下文预算
+
+相关配置：
+
+```env
+PR_CONTEXT_PLANNER_DIFF_CHARS=5000
+PR_CONTEXT_STAGE_DIFF_CHARS=12000
+PR_CONTEXT_STAGE_SUMMARY_CHARS=2200
+PR_CONTEXT_DEGRADED_DIFF_CHARS=6000
+PR_CONTEXT_TOOL_HISTORY_CHARS=1200
+PR_CONTEXT_KNOWLEDGE_CHARS=1800
+```
+
+---
+
+## 6. 工具系统：让 Agent 主动获取审查证据
+
+```mermaid
+flowchart LR
+    Executor["Executor"] --> Meta["get_pr_meta"]
+    Executor --> Diff["get_pr_diff"]
+    Executor --> Knowledge["search_review_knowledge"]
+    Executor --> Recent["list_recent_repo_tasks"]
+    Executor --> Commits["get_pr_commits"]
+    Executor --> Checks["get_pr_checks"]
+    Executor --> Issue["get_issue_context"]
+    Executor --> Code["search_repo_code"]
+    Executor --> Dep["get_dependency_context"]
+    Executor --> Related["get_related_prs"]
+
+    Meta --> Prompt["Stage Prompt"]
+    Diff --> Prompt
+    Knowledge --> Prompt
+    Recent --> Prompt
+    Commits --> Prompt
+    Checks --> Prompt
+    Issue --> Prompt
+    Code --> Prompt
+    Dep --> Prompt
+    Related --> Prompt
+```
+
+| 工具 | 价值 |
+| --- | --- |
+| `get_pr_meta` | 获取 PR 标题、描述、分支、文件数量 |
+| `get_pr_diff` | 获取可审查 diff |
+| `search_review_knowledge` | 检索团队 Code Review / 测试规范 |
+| `list_recent_repo_tasks` | 读取仓库近期审查任务 |
+| `get_pr_commits` | 理解提交演化和修复路径 |
+| `get_pr_checks` | 纳入 CI / checks 状态 |
+| `get_issue_context` | 读取关联 issue 背景 |
+| `search_repo_code` | 搜索仓库相关实现位置 |
+| `get_dependency_context` | 基于 diff 符号搜索依赖/调用链上下文 |
+| `get_related_prs` | 关联历史相似 PR |
+
+工具设计原则：
+
+- 白名单化
+- 输入输出稳定
+- 结果进入 trace
+- 失败可降级
+- 重要 PR 自动补更多工具上下文
+
+---
+
+## 7. 执行编排：从 Prompt 到状态机
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued
+    queued --> running_review
+    running_review --> planning
+    planning --> tool_execution
+    tool_execution --> stage_generation
+    stage_generation --> checkpoint
+    checkpoint --> running_test_suggestion
+    running_test_suggestion --> running_unit_test_generation
+    running_unit_test_generation --> reporter
+    reporter --> completed
+    reporter --> partial_completed
+
+    tool_execution --> replan: 缺工具/停滞
+    stage_generation --> recovery: 生成失败
+    recovery --> stage_generation: 降级重试
+    recovery --> partial_completed
+    tool_execution --> failed: 关键上下文失败
+```
+
+核心角色：
+
+- **Planner**：判断 PR 类型、风险重点、工具需求
+- **Executor**：决定下一步调用工具还是生成阶段结果
+- **Replanner**：在停滞、失败、缺上下文时重规划
+- **Reporter**：汇总执行轨迹与最终状态
+
+当前支持：
+
+- 多阶段执行
+- 阶段强制补全
+- 停滞检测
+- 重规划
+- checkpoint/resume
+- partial completed
+- trace 持久化
+
+---
+
+## 8. 状态与记忆：从单次任务到跨任务经验
+
+```mermaid
+flowchart TB
+    Task["AgentTask"] --> Status["状态"]
+    Task --> Outputs["三阶段输出"]
+    Task --> Payload["source_payload"]
+    Payload --> Trace["agent_trace"]
+    Trace --> Plan["plan"]
+    Trace --> Tools["tool_calls"]
+    Trace --> Replans["replans"]
+    Trace --> Errors["error_events"]
+    Trace --> Fallback["fallback_events"]
+    Trace --> Observability["observability"]
+
+    History["历史任务"] --> Memory["RepoReviewMemory"]
+    Memory --> Prompt["后续 PR Prompt"]
+```
+
+状态：
+
+- `queued`
+- `running`
+- `running_review`
+- `running_test_suggestion`
+- `running_unit_test_generation`
+- `completed`
+- `partial_completed`
+- `failed`
+
+记忆：
+
+- repo-level review memory
+- 高频风险模式
+- 高频测试关注
+- 历史审查任务来源
+- 后续 PR 自动复用经验
+
+---
+
+## 9. 评估与观测：让 Agent 改进可验证
+
+```mermaid
+flowchart TB
+    subgraph Offline["离线评估"]
+        Dataset["PR Eval Dataset"]
+        Runner["Eval Runner"]
+        Metrics["Rule Metrics"]
+        Judge["LLM Judge"]
+        Compare["A/B Compare"]
+    end
+
+    subgraph Online["线上观测"]
+        Trace["agent_trace"]
+        Observability["observability"]
+        Dashboard["Dashboard API"]
+        Alert["alert / manual_handoff"]
+    end
+
+    Dataset --> Runner
+    Runner --> Metrics
+    Runner --> Judge
+    Runner --> Compare
+    Trace --> Observability
+    Observability --> Dashboard
+    Alert --> Dashboard
+```
+
+离线评估：
+
+- PR review eval dataset
+- schema 校验
+- stage-only / full-agent 两种模式
+- 规则指标
+- LLM Judge
+- Markdown report
+- A/B compare
+- regression flags
+
+线上观测：
+
+- 总耗时
+- 阶段耗时
+- 工具耗时
+- fallback 次数
+- replan 次数
+- checkpoint 命中
+- 错误分类
+- 恢复动作
+- 告警投递
+- dashboard 汇总
+
+Dashboard API：
+
+```http
+GET /api/github/dashboard?days=7
+GET /api/github/dashboard?days=30&repo_id=1
+```
+
+返回：
+
+- `summary`
+- `status_counts`
+- `error_category_counts`
+- `recovery_counts`
+- `daily_trends`
+- `top_repositories`
+- `recent_tasks`
+
+---
+
+## 10. 约束与恢复：让失败可控
+
+```mermaid
+flowchart TB
+    Error["异常"] --> Classify["错误分类"]
+    Classify --> Github["github_api_error"]
+    Classify --> LLM["llm_generation_error"]
+    Classify --> Knowledge["knowledge_retrieval_error"]
+    Classify --> Empty["empty_diff_error"]
+    Classify --> Unknown["unknown_error"]
+
+    Github --> Retry["短重试"]
+    Retry --> Handoff["人工接管"]
+    LLM --> Degrade["降级上下文重试"]
+    Knowledge --> Skip["跳过知识库继续"]
+    Empty --> FailFast["Fail Fast"]
+    Unknown --> Handoff
+    Degrade --> Checkpoint["写入 checkpoint"]
+    Skip --> Checkpoint
+    Handoff --> Alert["alert"]
+```
+
+| 错误类型 | 恢复策略 |
+| --- | --- |
+| `github_api_error` | 短重试，仍失败则人工接管 |
+| `llm_generation_error` | 降级上下文重试 |
+| `knowledge_retrieval_error` | 跳过知识库继续 |
+| `empty_diff_error` | fail fast，避免无依据生成 |
+| `unknown_error` | 记录并人工接管 |
+
+恢复能力：
+
+- webhook 幂等
+- 错误分类
+- 恢复策略矩阵
+- 降级重试
+- checkpoint/resume
+- partial completed
+- manual handoff
+- alert
+- alert dedupe
+
+---
+
+## 11. 告警与人工接管
+
+```mermaid
+flowchart LR
+    Agent["PR Agent"] --> Signal["manual_handoff / alert"]
+    Signal --> TaskDetail["任务详情"]
+    Signal --> Dashboard["Dashboard"]
+    Signal --> Dedupe["告警去重"]
+    Dedupe --> Webhook["Webhook Sender"]
+    Webhook --> Generic["Generic JSON"]
+    Webhook --> Slack["Slack Blocks"]
+    Webhook --> Feishu["Feishu Card"]
+```
+
+触发人工接管：
+
+- GitHub 上下文获取失败
+- diff 为空
+- 任务部分完成
+- 多次 fallback / replan
+- 未知错误
+
+告警配置：
+
+```env
+PR_ALERT_WEBHOOK_URL=
+PR_ALERT_PROVIDER=generic
+PR_ALERT_TIMEOUT=10
+PR_ALERT_DEDUPE_WINDOW_MINUTES=120
+```
+
+支持 provider：
+
+- `generic`
+- `slack`
+- `feishu`
+
+告警投递 trace：
+
+- `attempted`
+- `delivered`
+- `deduped`
+- `signature`
+
+---
+
+## 12. RAG 知识库能力
+
+RAG 仍然是这个项目的重要基础能力。  
+在当前 Harness Agent 架构里，它既可以作为独立的团队知识库问答链路，也可以作为 PR Agent 的 **知识工具层**，为 Code Review 提供团队规范、历史约定和测试标准。
+
+### RAG 核心架构图
 
 ```mermaid
 flowchart LR
   subgraph Ingest["知识入库"]
     A1["上传文档"]
-    A2["文档解析<br/>保留标题、列表、结构"]
+    A2["文档解析<br/>PDF / DOCX / MD / TXT"]
     A3["结构优先分块"]
     A4["语义切分<br/>小块合并"]
-    A5["写入知识库"]
+    A5["向量化"]
+    A6["写入 ChromaDB"]
   end
 
-  subgraph Retrieve["问答检索"]
-    B1["用户问题"]
+  subgraph Retrieve["检索增强"]
+    B1["用户问题 / Agent Query"]
     B2["查询改写"]
-    B3["关键词召回"]
-    B4["语义召回"]
+    B3["BM25 关键词召回"]
+    B4["向量召回"]
     B5["融合去重"]
     B6["相关性筛选"]
-    B7["邻接片段补全"]
+    B7["邻接 Chunk 补全"]
   end
 
   subgraph Generate["回答生成"]
     C1["构建知识上下文"]
     C2["结合短期 / 长期记忆"]
-    C3["生成最终回答"]
+    C3["LLM 生成回答"]
     C4["空正文兜底"]
   end
 
-  subgraph Result["结果展示"]
+  subgraph Output["结果输出"]
     D1["回答正文"]
     D2["来源卡片"]
     D3["命中状态"]
-    D4["多轮追问"]
+    D4["PR Agent 知识工具"]
   end
 
-  A1 --> A2 --> A3 --> A4 --> A5
+  A1 --> A2 --> A3 --> A4 --> A5 --> A6
   B1 --> B2
   B2 --> B3
   B2 --> B4
-  A5 --> B3
-  A5 --> B4
+  A6 --> B3
+  A6 --> B4
   B3 --> B5
   B4 --> B5
   B5 --> B6 --> B7 --> C1
@@ -381,128 +563,96 @@ flowchart LR
   C3 -- 无有效正文 --> C4 --> D1
   B7 --> D2
   B6 --> D3
-  D1 --> D4
+  C1 --> D4
 ```
 
+### RAG 亮点
+
+- **不是简单接向量库**：完整覆盖文档解析、分块、向量化、混合检索、回答生成和来源追溯。
+- **混合检索**：结合 `BM25 + 向量检索`，避免纯语义检索漏掉关键术语。
+- **结构优先分块**：优先保留标题、列表、段落等结构信息，减少知识块语义断裂。
+- **邻接 Chunk 补全**：检索命中后补充相邻片段，让答案上下文更完整。
+- **来源可追溯**：回答时保留来源卡片，方便用户验证答案依据。
+- **可被 Agent 工具化调用**：PR Agent 可以通过 `search_review_knowledge` 检索团队审查规范和测试规范。
+
+### RAG 难点与解决思路
+
+| 难点 | 问题表现 | 解决方式 |
+| --- | --- | --- |
+| 文档解析质量不稳定 | PDF / DOCX 解析后结构丢失，影响检索 | 优先使用 `MarkItDown`，失败时降级处理 |
+| 分块太粗 | 命中内容过大，答案容易泛化 | 结构优先切分，再做语义边界控制 |
+| 分块太碎 | 命中片段不完整，答案缺上下文 | 小块合并 + 邻接 chunk 补全 |
+| 只靠向量召回不稳 | 专有名词、配置项、函数名可能漏召回 | 引入 BM25 与向量混合召回 |
+| 检索结果有噪声 | 模型拿到无关上下文，回答漂移 | 相关性筛选后再构建最终上下文 |
+| 生成结果可能空正文 | 部分模型只返回 reasoning 或空内容 | 增加空正文兜底，避免前端展示异常 |
+
+### RAG 与 Harness Agent 的关系
+
+```mermaid
+flowchart LR
+    Docs["团队知识文档"] --> RAG["RAG Knowledge Base"]
+    RAG --> Chat["知识库问答"]
+    RAG --> PRAgent["PR Review Agent"]
+    PRAgent --> Tool["search_review_knowledge"]
+    Tool --> Prompt["PR Review Stage Prompt"]
+    Prompt --> Review["更贴合团队规范的审查结果"]
+```
+
+也就是说，RAG 在本项目中有两层价值：
+
+1. **独立问答能力**：让团队文档可检索、答案可追溯。
+2. **Agent 工具能力**：让 PR Agent 在审查时能主动引用团队规范，而不是只依赖模型通用知识。
+
 ---
 
-## 我的核心贡献
-
-我在这个项目中的核心工作，不是把大模型接进业务页面，而是把模型的不确定性收敛到工程可控范围内，围绕 RAG 和 Agent 两条主链路做了多轮设计、实现与优化。
-
-具体包括：
-
-- 搭建团队知识库问答全链路：解析、分块、向量化、混合检索、来源展示
-- 设计并实现短期记忆与长期记忆机制
-- 将聊天模块升级为支持工具调用的 ChatAgent
-- 将 GitHub PR 审查升级为具备任务编排、执行轨迹和阶段化产出的 Agent 系统
-- 多轮优化文档分块与 RAG 检索质量，解决回答偏摘要化、知识片段不完整等问题
-- 处理 embedding 维度冲突、模型空正文输出、PR Agent JSON 不稳定、流式链路不稳定等真实工程问题
-- 重构部署方式，明确代码、配置、运行时数据三层边界
-- 推动 Prompt 管理、日志治理和链路可观测性建设，提高系统后续可维护性
-
-一句话概括：我做的不是“把模型接进系统”，而是通过状态机、工具约束、异常兜底、执行轨迹、双模型配置和部署治理，把 Agent 从“能跑的 Demo”做成了“可复用、可观测、可迭代的平台能力”。
-
----
-
-## 系统架构
+## 13. 核心目录
 
 ```text
-               ┌──────────────────────────────┐
-               │         React Frontend       │
-               │ Chat / Docs / Review / PR UI │
-               └──────────────┬───────────────┘
-                              │ HTTP / SSE
-                              ▼
-               ┌──────────────────────────────┐
-               │        FastAPI Backend       │
-               │  Chat / RAG / Agent / Auth   │
-               └───────┬─────────┬────────────┘
-                       │         │
-          ┌────────────┘         └──────────────┐
-          ▼                                     ▼
- ┌──────────────────┐                  ┌──────────────────┐
- │      Redis       │                  │   SQLite / ORM   │
- │ Short Memory     │                  │ Users / Tasks /  │
- │ Session Cache    │                  │ Conversations    │
- └──────────────────┘                  └──────────────────┘
-          │
-          ▼
- ┌──────────────────┐
- │     ChromaDB     │
- │ Knowledge Vectors│
- └──────────────────┘
-          ▲
-          │
- ┌──────────────────┐
- │ Document Parsing │
- │ MarkItDown       │
- │ Split / Embed    │
- └──────────────────┘
-          ▲
-          │
- ┌──────────────────┐
- │ LLM / Embedding  │
- │ OpenAI-Compatible│
- │ BigModel API     │
- └──────────────────┘
-          ▲
-          │
- ┌──────────────────┐
- │ GitHub Webhook   │
- │ PR Events        │
- └──────────────────┘
+backend/
+  routers/
+    github_router.py              # GitHub Agent API / dashboard / webhook
+  services/
+    pr_review_agent_service.py    # PR Review Harness Agent 主流程
+    pr_review_tool_service.py     # PR Agent 工具系统
+    agent_service.py              # 任务调度、恢复、告警、人工接管
+    alert_service.py              # generic / slack / feishu webhook 告警
+    github_service.py             # GitHub API 封装
+    rag_service.py                # RAG 检索
+  evaluation/
+    pr_review/                    # PR Review 离线评估体系
+  models/
+    agent_task.py                 # Agent 任务状态
+    repo_review_memory.py         # Repo-level review memory
+
+frontend/
+  # GitHub Agent 页面、任务结果、trace 展示
 ```
 
 ---
 
-## 核心流程
+## 14. 技术栈
 
-### 1. 知识库问答流程
+### Harness / Agent
 
-```text
-用户提问
-  ↓
-查询改写
-  ↓
-BM25 + 向量混合检索
-  ↓
-相关性筛选 + 邻接 chunk 补全
-  ↓
-构建知识上下文
-  ↓
-LLM 生成回答
-  ↓
-前端展示回答 + 来源卡片
-```
+- Planner / Executor / Replanner / Reporter
+- Tool whitelist
+- Agent trace
+- Checkpoint / resume
+- Recovery strategy matrix
+- Manual handoff
+- Alert webhook
 
-### 2. GitHub PR 自动审查流程
+### Backend
 
-```text
-GitHub Webhook 触发 PR 事件
-  ↓
-创建审查任务
-  ↓
-拉取 PR 元信息 + Diff
-  ↓
-Planner 生成计划
-  ↓
-Executor 决定工具调用 / 阶段生成
-  ↓
-按需检索团队知识库规范
-  ↓
-生成三阶段结果
-  ↓
-Reporter 汇总 Agent Trace
-  ↓
-前端展示任务状态、结果与执行轨迹
-```
+- FastAPI
+- SQLAlchemy
+- SQLite
+- Redis
+- ChromaDB
+- OpenAI-compatible API
+- httpx
 
----
-
-## 技术栈
-
-### 前端
+### Frontend
 
 - React
 - TypeScript
@@ -511,40 +661,17 @@ Reporter 汇总 Agent Trace
 - Zustand
 - React Markdown
 
-### 后端
+### Evaluation
 
-- FastAPI
-- SQLAlchemy + SQLite
-- Redis
-- ChromaDB
-- LangChain Chroma / Text Splitters
-- MarkItDown
-- OpenAI-Compatible API
-
-### 部署
-
-- Docker
-- Docker Compose
-- Shell 一键部署脚本
+- Offline dataset
+- Rule metrics
+- LLM as Judge
+- A/B compare
+- Markdown report
 
 ---
 
-## 已完成成果
-
-这里不写缺少证据支撑的“准确率提升 30%”，而是只写当前已经实际完成、可验证的结果：
-
-- 已打通知识库问答、多轮会话与记忆、手动 Code Review、GitHub PR 自动审查四条核心链路
-- 知识库链路已形成从“文档上传”到“来源可追溯回答”的闭环
-- PR 审查链路已形成从“Webhook 触发”到“三阶段结果展示 + Agent Trace 展示”的闭环
-- 文档处理链路已从基础解析升级为更适合 LLM / RAG 的解析与分块方案
-- 部署链路已从“代码、配置、数据混杂”升级为“代码 / 配置 / 运行时数据分离”
-- 项目已经处理过多类真实线上问题，并沉淀出工程化解法
-
----
-
----
-
-## 快速启动
+## 15. 快速启动
 
 ### 后端
 
@@ -567,7 +694,31 @@ npm run dev
 
 ---
 
-## 部署
+## 16. 关键环境变量
+
+```env
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
+CHAT_MODEL=
+PR_AGENT_CONTROL_MODEL=
+PR_AGENT_GENERATION_MODEL=
+
+DATABASE_URL=sqlite+aiosqlite:///./app.db
+REDIS_URL=redis://localhost:6379/0
+
+GITHUB_API_BASE_URL=https://api.github.com
+GITHUB_DIFF_MAX_FILES=20
+GITHUB_DIFF_MAX_CHARS=24000
+
+PR_ALERT_WEBHOOK_URL=
+PR_ALERT_PROVIDER=generic
+PR_ALERT_TIMEOUT=10
+PR_ALERT_DEDUPE_WINDOW_MINUTES=120
+```
+
+---
+
+## 17. 部署
 
 ### 只部署 backend
 
@@ -583,7 +734,85 @@ npm run dev
 
 ---
 
-## 补充文档
+## 18. 当前能力总览
+
+| 能力 | 状态 |
+| --- | --- |
+| GitHub webhook 触发 | 已完成 |
+| PR 任务幂等 | 已完成 |
+| Planner / Executor / Replanner / Reporter | 已完成 |
+| PR meta / diff / commits / checks | 已完成 |
+| issue 背景 / code search | 已完成 |
+| 依赖/调用链上下文 | 已完成 |
+| 跨 PR 关联 | 已完成 |
+| 团队知识库检索 | 已完成 |
+| repo-level memory | 已完成 |
+| checkpoint/resume | 已完成 |
+| 错误分类与恢复策略 | 已完成 |
+| 离线评估 / LLM Judge / A/B compare | 已完成 |
+| observability trace | 已完成 |
+| dashboard API | 已完成 |
+| manual handoff | 已完成 |
+| generic / slack / feishu webhook 告警 | 已完成 |
+| 告警去重 | 已完成 |
+
+---
+
+## 19. 剩余增强项
+
+当前核心 Harness Agent 已基本闭环，剩余主要是增强项：
+
+1. **图表化 Dashboard**
+   - 状态趋势图
+   - 错误分布图
+   - 恢复动作统计
+   - 仓库对比视图
+
+2. **深度静态分析**
+   - 符号级引用定位
+   - 更精确依赖图
+   - 调用链深度分析
+
+3. **人审工作台**
+   - 接管任务池
+   - 人工处理状态
+   - 处理备注
+   - 审批流
+
+4. **长期质量闭环**
+   - 人工反馈进入 eval dataset
+   - 周期报告
+   - 指标驱动 prompt / tool 调整
+
+---
+
+## 20. 总结
+
+这个项目已经不是普通 AI 应用，而是一个接近完整的 **PR Review Harness Agent Platform**。
+
+它把 LLM 从“生成文本的模型”放进一个工程化外壳里，通过：
+
+- 上下文治理
+- 工具系统
+- 执行编排
+- 状态记忆
+- 评估观测
+- 约束恢复
+- 人工接管
+- 告警运营
+
+把 PR 审查做成了一套可持续迭代的研发智能体系统。
+
+一句话概括：
+
+> **这不是一个 PR Review Prompt，而是一个面向代码审查场景的 Harness Agent 工程平台。**
+
+---
+
+## 21. 补充文档
 
 - [DEPLOYMENT.md](./DEPLOYMENT.md)
+- [harness engineering.md](./harness%20engineering.md)
+- [harness roadmap.md](./harness%20roadmap.md)
+- [backend/evaluation/README.md](./backend/evaluation/README.md)
 - [backend/prompts/README.md](./backend/prompts/README.md)
