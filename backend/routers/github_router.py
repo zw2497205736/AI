@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -22,8 +23,44 @@ from services.github_service import (
 router = APIRouter(prefix="/api/github", tags=["github-agent"])
 
 
+def _extract_task_signal(task: AgentTask) -> tuple[dict | None, dict | None]:
+    if not task.source_payload:
+        return None, None
+    try:
+        payload = json.loads(task.source_payload)
+    except json.JSONDecodeError:
+        return None, None
+    if not isinstance(payload, dict):
+        return None, None
+    agent_trace = payload.get("agent_trace") if isinstance(payload.get("agent_trace"), dict) else {}
+    manual_handoff = agent_trace.get("manual_handoff") if isinstance(agent_trace.get("manual_handoff"), dict) else None
+    alert = agent_trace.get("alert") if isinstance(agent_trace.get("alert"), dict) else None
+    return manual_handoff, alert
+
+
+def _extract_agent_trace(task: AgentTask) -> dict:
+    if not task.source_payload:
+        return {}
+    try:
+        payload = json.loads(task.source_payload)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    agent_trace = payload.get("agent_trace")
+    return agent_trace if isinstance(agent_trace, dict) else {}
+
+
 def _build_webhook_url(request: Request, repo_id: int) -> str:
     return f"{str(request.base_url).rstrip('/')}/api/github/webhook/{repo_id}"
+
+
+def _task_time(task: AgentTask) -> datetime | None:
+    return task.updated_at or task.created_at
+
+
+def _day_bucket(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%d")
 
 
 async def _get_owned_repo(repo_id: int, user_id: str, db: AsyncSession) -> GitHubRepository:
@@ -121,11 +158,144 @@ async def get_tasks(db: AsyncSession = Depends(get_db), current_user=Depends(get
             "title": task.title,
             "status": task.status,
             "error_message": task.error_message,
+            "manual_handoff": _extract_task_signal(task)[0],
+            "alert": _extract_task_signal(task)[1],
             "created_at": task.created_at.isoformat() if task.created_at else "",
             "updated_at": task.updated_at.isoformat() if task.updated_at else "",
         }
         for task in tasks
     ]
+
+
+@router.get("/dashboard")
+async def get_dashboard(
+    days: int = 7,
+    repo_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    tasks = await list_user_tasks(current_user.username, db)
+    normalized_days = max(1, min(days, 90))
+    since = datetime.now(timezone.utc) - timedelta(days=normalized_days - 1)
+    filtered_tasks = []
+    for task in tasks:
+        if repo_id is not None and task.repo_id != repo_id:
+            continue
+        task_time = _task_time(task)
+        if task_time is None:
+            continue
+        if task_time.tzinfo is None:
+            task_time = task_time.replace(tzinfo=timezone.utc)
+        if task_time >= since:
+            filtered_tasks.append(task)
+    tasks = filtered_tasks
+    repo_ids = {task.repo_id for task in tasks}
+    repo_map: dict[int, GitHubRepository] = {}
+    if repo_ids:
+        repo_result = await db.execute(select(GitHubRepository).where(GitHubRepository.id.in_(repo_ids)))
+        repo_map = {repo.id: repo for repo in repo_result.scalars().all()}
+
+    status_counts: dict[str, int] = {}
+    error_category_counts: dict[str, int] = {}
+    recovery_counts: dict[str, int] = {}
+    repo_counts: dict[str, int] = {}
+    total_duration_ms = 0
+    duration_samples = 0
+    manual_handoff_count = 0
+    alert_count = 0
+    checkpoint_hit_count = 0
+    trend_map: dict[str, dict[str, int]] = {}
+
+    for task in tasks:
+        status_counts[task.status] = status_counts.get(task.status, 0) + 1
+        repo_name = repo_map.get(task.repo_id).display_name if repo_map.get(task.repo_id) else f"repo:{task.repo_id}"
+        repo_counts[repo_name] = repo_counts.get(repo_name, 0) + 1
+        task_time = _task_time(task)
+        if task_time is not None:
+            if task_time.tzinfo is None:
+                task_time = task_time.replace(tzinfo=timezone.utc)
+            bucket = _day_bucket(task_time)
+            trend = trend_map.setdefault(
+                bucket,
+                {"task_count": 0, "manual_handoff_count": 0, "alert_count": 0, "failed_count": 0},
+            )
+            trend["task_count"] += 1
+            if task.status in {"failed", "partial_completed"}:
+                trend["failed_count"] += 1
+
+        manual_handoff, alert = _extract_task_signal(task)
+        if manual_handoff:
+            manual_handoff_count += 1
+            if task_time is not None:
+                trend_map[_day_bucket(task_time)]["manual_handoff_count"] += 1
+        if alert and alert.get("required"):
+            alert_count += 1
+            if task_time is not None:
+                trend_map[_day_bucket(task_time)]["alert_count"] += 1
+
+        agent_trace = _extract_agent_trace(task)
+        observability = agent_trace.get("observability") if isinstance(agent_trace.get("observability"), dict) else {}
+        if isinstance(observability.get("total_duration_ms"), int):
+            total_duration_ms += int(observability["total_duration_ms"])
+            duration_samples += 1
+        checkpoint_hits = observability.get("checkpoint_hits")
+        if isinstance(checkpoint_hits, list):
+            checkpoint_hit_count += len(checkpoint_hits)
+
+        error_events = agent_trace.get("error_events")
+        if isinstance(error_events, list):
+            for item in error_events:
+                if not isinstance(item, dict):
+                    continue
+                category = str(item.get("category") or "unknown_error")
+                recovery = str(item.get("recovery") or "unknown")
+                error_category_counts[category] = error_category_counts.get(category, 0) + 1
+                recovery_counts[recovery] = recovery_counts.get(recovery, 0) + 1
+
+    top_repositories = sorted(repo_counts.items(), key=lambda item: item[1], reverse=True)[:5]
+    recent_tasks = tasks[:8]
+    ordered_days = [
+        _day_bucket((since + timedelta(days=offset)))
+        for offset in range(normalized_days)
+    ]
+    return {
+        "summary": {
+            "task_count": len(tasks),
+            "manual_handoff_count": manual_handoff_count,
+            "alert_count": alert_count,
+            "checkpoint_hit_count": checkpoint_hit_count,
+            "avg_duration_ms": int(total_duration_ms / duration_samples) if duration_samples else 0,
+            "days": normalized_days,
+            "repo_id": repo_id,
+        },
+        "status_counts": status_counts,
+        "error_category_counts": error_category_counts,
+        "recovery_counts": recovery_counts,
+        "daily_trends": [
+            {
+                "day": day,
+                **trend_map.get(day, {"task_count": 0, "manual_handoff_count": 0, "alert_count": 0, "failed_count": 0}),
+            }
+            for day in ordered_days
+        ],
+        "top_repositories": [
+            {"repo_display_name": repo_name, "task_count": task_count}
+            for repo_name, task_count in top_repositories
+        ],
+        "recent_tasks": [
+            {
+                "id": task.id,
+                "repo_display_name": repo_map.get(task.repo_id).display_name if repo_map.get(task.repo_id) else "未知仓库",
+                "pr_number": task.pr_number,
+                "title": task.title,
+                "status": task.status,
+                "manual_handoff": _extract_task_signal(task)[0],
+                "alert": _extract_task_signal(task)[1],
+                "updated_at": task.updated_at.isoformat() if task.updated_at else "",
+            }
+            for task in recent_tasks
+        ],
+    }
 
 
 @router.get("/tasks/{task_id}")
@@ -148,6 +318,8 @@ async def get_task_detail(task_id: int, db: AsyncSession = Depends(get_db), curr
         "unit_test_generation_content": task.unit_test_generation_content or "",
         "error_message": task.error_message,
         "source_payload": json.loads(task.source_payload) if task.source_payload else None,
+        "manual_handoff": _extract_task_signal(task)[0],
+        "alert": _extract_task_signal(task)[1],
         "created_at": task.created_at.isoformat() if task.created_at else "",
         "updated_at": task.updated_at.isoformat() if task.updated_at else "",
     }
@@ -198,13 +370,34 @@ async def github_webhook(repo_id: int, request: Request, db: AsyncSession = Depe
         return {"status": "ignored", "reason": f"Unsupported action: {action}"}
 
     pull_request = payload.get("pull_request") or {}
+    pr_number = pull_request.get("number") or payload.get("number")
+    commit_sha = (pull_request.get("head") or {}).get("sha")
+    existing_result = await db.execute(
+        select(AgentTask)
+        .where(
+            AgentTask.repo_id == repo.id,
+            AgentTask.task_type == "pr_review",
+            AgentTask.pr_number == pr_number,
+            AgentTask.commit_sha == commit_sha,
+        )
+        .order_by(AgentTask.created_at.desc(), AgentTask.id.desc())
+    )
+    existing_task = existing_result.scalar_one_or_none()
+    if existing_task is not None:
+        return {
+            "status": "duplicate",
+            "task_id": existing_task.id,
+            "task_status": existing_task.status,
+            "reason": "Task already exists for this PR head commit",
+        }
+
     task = AgentTask(
         repo_id=repo.id,
         user_id=repo.user_id,
         task_type="pr_review",
         event_type=action,
-        pr_number=pull_request.get("number") or payload.get("number"),
-        commit_sha=(pull_request.get("head") or {}).get("sha"),
+        pr_number=pr_number,
+        commit_sha=commit_sha,
         title=pull_request.get("title") or f"PR #{payload.get('number')}",
         status="queued",
         source_payload=serialize_payload(
