@@ -19,7 +19,7 @@ async def get_db():
 
 
 async def create_tables():
-    from models import agent_task, conversation, document, github_repository, memory, user  # noqa: F401
+    from models import agent_task, conversation, document, github_repository, memory, repo_review_memory, user  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
