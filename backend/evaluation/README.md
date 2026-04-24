@@ -120,3 +120,20 @@ pip install -r backend/requirements-eval.txt
 - 自动化数据标注
 - 多版本实验对比面板
 - 人工评测工作台
+
+## PR Review 评测扩展
+
+仓库里已经补充了面向 GitHub PR Agent 的第一版评测设计材料：
+
+- `backend/evaluation/pr_review/README.md`
+- `backend/evaluation/pr_review/pr_review_eval_dataset.schema.json`
+- `backend/evaluation/pr_review/pr_review_eval_dataset.example.json`
+
+这部分当前仍以设计和数据格式定义为主，后续再接 runner 与指标实现。
+
+当前已补充最小可跑骨架，可通过下面命令执行：
+
+```bash
+python -m evaluation.pr_review.cli \
+  --dataset evaluation/pr_review/pr_review_eval_dataset.example.json
+```

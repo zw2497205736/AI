@@ -1,0 +1,276 @@
+{
+  "dataset_name": "pr-review-eval-dev",
+  "version": "v1",
+  "samples": [
+    {
+      "sample_id": "pr-sample-001",
+      "repo_name": "demo/payment-service",
+      "pr_number": 128,
+      "title": "fix: avoid duplicate payment on retry",
+      "body": "修复支付回调超时重试时可能出现重复扣款的问题。",
+      "changed_files": [
+        {
+          "filename": "backend/services/payment_service.py",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 4
+        },
+        {
+          "filename": "backend/tests/test_payment_service.py",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        }
+      ],
+      "diff_text": "File: backend/services/payment_service.py\n@@\n- if payment.status == 'SUCCESS':\n-     return\n+ if payment.status == 'SUCCESS':\n+     return {'status': 'ignored'}\n+\n+ existing_order = await order_repo.find_by_request_id(request_id)\n+ if existing_order:\n+     return {'status': 'duplicate'}\n+\n  await gateway.charge(user_id, amount)\n  await order_repo.save(request_id=request_id, user_id=user_id, amount=amount)\n\nFile: backend/tests/test_payment_service.py\n@@\n+ def test_process_callback_returns_duplicate_when_request_id_exists():\n+     ...\n",
+      "ground_truth": {
+        "must_find_issues": [
+          {
+            "title": "幂等检查与扣款之间仍可能存在并发竞态",
+            "severity": "high",
+            "file": "backend/services/payment_service.py",
+            "reason": "仅通过先查后写无法保证并发下不重复扣款，多个请求可能同时通过 existing_order 检查。",
+            "expected_keywords": ["并发", "竞态", "幂等", "重复扣款", "request_id"]
+          }
+        ],
+        "optional_issues": [
+          {
+            "title": "返回值协议变化需确认调用方兼容性",
+            "severity": "medium"
+          }
+        ],
+        "test_focuses": [
+          "重复回调场景",
+          "并发重复请求场景",
+          "order_repo 已存在记录场景",
+          "gateway 调用异常场景"
+        ],
+        "unit_test_targets": [
+          "process_callback",
+          "order_repo.find_by_request_id",
+          "gateway.charge"
+        ],
+        "merge_recommendation": "changes_requested"
+      },
+      "metadata": {
+        "language": "python",
+        "pr_type": "bugfix",
+        "risk_level": "high"
+      }
+    },
+    {
+      "sample_id": "pr-sample-002",
+      "repo_name": "demo/order-api",
+      "pr_number": 214,
+      "title": "feat: add bulk cancel order endpoint",
+      "body": "新增批量取消订单接口，支持运营后台一次取消多个待支付订单。",
+      "changed_files": [
+        {
+          "filename": "src/main/java/com/demo/order/OrderController.java",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 0
+        },
+        {
+          "filename": "src/main/java/com/demo/order/OrderService.java",
+          "status": "modified",
+          "additions": 27,
+          "deletions": 3
+        }
+      ],
+      "diff_text": "File: src/main/java/com/demo/order/OrderController.java\n@@\n+ @PostMapping(\"/orders/cancel/bulk\")\n+ public Result bulkCancel(@RequestBody List<Long> orderIds) {\n+     return Result.ok(orderService.bulkCancel(orderIds));\n+ }\n\nFile: src/main/java/com/demo/order/OrderService.java\n@@\n+ public int bulkCancel(List<Long> orderIds) {\n+     int count = 0;\n+     for (Long orderId : orderIds) {\n+         Order order = orderRepository.findById(orderId);\n+         if (order == null) {\n+             continue;\n+         }\n+         if (order.getStatus() == OrderStatus.PAID) {\n+             continue;\n+         }\n+         order.setStatus(OrderStatus.CANCELLED);\n+         orderRepository.save(order);\n+         count++;\n+     }\n+     return count;\n+ }\n",
+      "ground_truth": {
+        "must_find_issues": [
+          {
+            "title": "缺少批量接口的权限校验或运营身份约束",
+            "severity": "high",
+            "file": "src/main/java/com/demo/order/OrderController.java",
+            "reason": "批量取消接口直接暴露，未体现权限校验，可能导致普通调用方越权取消订单。",
+            "expected_keywords": ["权限", "鉴权", "越权", "批量取消", "controller"]
+          },
+          {
+            "title": "批量取消缺少事务语义，部分成功会导致状态不一致",
+            "severity": "medium",
+            "file": "src/main/java/com/demo/order/OrderService.java",
+            "reason": "循环逐条保存，失败时可能出现部分订单已取消、部分未取消的中间状态。",
+            "expected_keywords": ["事务", "部分成功", "一致性", "批量", "状态不一致"]
+          }
+        ],
+        "optional_issues": [
+          {
+            "title": "未限制 orderIds 为空或过大时的行为",
+            "severity": "medium"
+          }
+        ],
+        "test_focuses": [
+          "空列表输入场景",
+          "包含已支付订单场景",
+          "部分订单不存在场景",
+          "权限不足调用场景"
+        ],
+        "unit_test_targets": [
+          "bulkCancel",
+          "OrderController.bulkCancel",
+          "orderRepository.save"
+        ],
+        "merge_recommendation": "changes_requested"
+      },
+      "metadata": {
+        "language": "java",
+        "pr_type": "backend_api_change",
+        "risk_level": "high"
+      }
+    },
+    {
+      "sample_id": "pr-sample-003",
+      "repo_name": "demo/report-service",
+      "pr_number": 77,
+      "title": "test: add csv export tests",
+      "body": "补充导出报表的单元测试。",
+      "changed_files": [
+        {
+          "filename": "tests/test_export_csv.py",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 1
+        }
+      ],
+      "diff_text": "File: tests/test_export_csv.py\n@@\n+ def test_export_csv_success(client, mocker):\n+     mocker.patch('app.exporter.build_rows', return_value=[['a', 'b']])\n+     response = client.get('/reports/export?format=csv')\n+     assert response.status_code == 200\n+\n+ def test_export_csv_empty_rows(client, mocker):\n+     mocker.patch('app.exporter.build_rows', return_value=[])\n+     response = client.get('/reports/export?format=csv')\n+     assert response.status_code == 200\n",
+      "ground_truth": {
+        "must_find_issues": [
+          {
+            "title": "测试仅验证状态码，未验证导出内容和响应头，断言偏弱",
+            "severity": "medium",
+            "file": "tests/test_export_csv.py",
+            "reason": "导出能力的关键是文件内容、文件名、Content-Type 等，而不是仅仅返回 200。",
+            "expected_keywords": ["断言", "响应头", "content-type", "文件内容", "状态码"]
+          }
+        ],
+        "optional_issues": [
+          {
+            "title": "缺少异常路径测试，例如 build_rows 抛错",
+            "severity": "medium"
+          }
+        ],
+        "test_focuses": [
+          "响应头校验",
+          "导出内容校验",
+          "空数据导出行为",
+          "异常路径场景"
+        ],
+        "unit_test_targets": [
+          "test_export_csv_success",
+          "test_export_csv_empty_rows",
+          "app.exporter.build_rows"
+        ],
+        "merge_recommendation": "approve_with_notes"
+      },
+      "metadata": {
+        "language": "python",
+        "pr_type": "test_only",
+        "risk_level": "medium"
+      }
+    },
+    {
+      "sample_id": "pr-sample-004",
+      "repo_name": "demo/admin-console",
+      "pr_number": 309,
+      "title": "feat: optimistic update for user status toggle",
+      "body": "用户状态切换时先更新前端状态，再异步提交服务端。",
+      "changed_files": [
+        {
+          "filename": "src/pages/UserList.tsx",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 5
+        }
+      ],
+      "diff_text": "File: src/pages/UserList.tsx\n@@\n- const handleToggle = async (userId: string, enabled: boolean) => {\n-   await api.updateUserStatus(userId, enabled)\n-   refreshList()\n- }\n+ const handleToggle = async (userId: string, enabled: boolean) => {\n+   setUsers((prev) => prev.map((item) => item.id === userId ? { ...item, enabled } : item))\n+   try {\n+     await api.updateUserStatus(userId, enabled)\n+   } catch (error) {\n+     console.error(error)\n+   }\n+ }\n",
+      "ground_truth": {
+        "must_find_issues": [
+          {
+            "title": "接口失败后没有回滚 optimistic update，前后端状态可能不一致",
+            "severity": "high",
+            "file": "src/pages/UserList.tsx",
+            "reason": "catch 中只打印错误，没有恢复原状态，也没有提示用户，导致 UI 状态可能错误。",
+            "expected_keywords": ["回滚", "状态不一致", "optimistic", "失败", "catch"]
+          }
+        ],
+        "optional_issues": [
+          {
+            "title": "缺少 loading 或重复点击保护",
+            "severity": "medium"
+          }
+        ],
+        "test_focuses": [
+          "接口成功场景",
+          "接口失败回滚场景",
+          "连续快速点击场景",
+          "错误提示展示场景"
+        ],
+        "unit_test_targets": [
+          "handleToggle",
+          "setUsers",
+          "api.updateUserStatus"
+        ],
+        "merge_recommendation": "changes_requested"
+      },
+      "metadata": {
+        "language": "typescript",
+        "pr_type": "frontend_ui_change",
+        "risk_level": "high"
+      }
+    },
+    {
+      "sample_id": "pr-sample-005",
+      "repo_name": "demo/ops-gateway",
+      "pr_number": 411,
+      "title": "chore: relax internal admin route config",
+      "body": "为了方便联调，放宽内部管理接口的默认配置。",
+      "changed_files": [
+        {
+          "filename": "config/application.yml",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        }
+      ],
+      "diff_text": "File: config/application.yml\n@@\n- admin:\n-   allowed-origins: []\n+ admin:\n+   allowed-origins:\n+     - \"*\"\n+   auth-disabled: true\n",
+      "ground_truth": {
+        "must_find_issues": [
+          {
+            "title": "默认关闭管理接口鉴权存在明显安全风险",
+            "severity": "high",
+            "file": "config/application.yml",
+            "reason": "auth-disabled 设为 true 可能让管理接口在默认环境下失去保护。",
+            "expected_keywords": ["安全", "鉴权", "auth-disabled", "默认配置", "管理接口"]
+          },
+          {
+            "title": "允许任意来源访问管理接口存在跨域暴露风险",
+            "severity": "high",
+            "file": "config/application.yml",
+            "reason": "allowed-origins 配成 * 会放开所有来源，不适合管理接口默认配置。",
+            "expected_keywords": ["cors", "allowed-origins", "跨域", "任意来源", "管理接口"]
+          }
+        ],
+        "optional_issues": [],
+        "test_focuses": [
+          "默认配置加载场景",
+          "生产环境配置覆盖场景",
+          "未授权访问场景"
+        ],
+        "unit_test_targets": [
+          "admin config binding",
+          "auth guard",
+          "cors config"
+        ],
+        "merge_recommendation": "changes_requested"
+      },
+      "metadata": {
+        "language": "yaml",
+        "pr_type": "config_change",
+        "risk_level": "high"
+      }
+    }
+  ]
+}
