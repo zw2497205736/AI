@@ -23,3 +23,12 @@ backend/evaluation/output/
 # Common local backups
 backups/
 *.tar.gz
+
+# 资料
+详细任务清单.md
+AGENT方案.md
+DEPLOYMENT.md
+harness engineering.md
+harness roadmap.md
+resume.md
+SPEC.md
