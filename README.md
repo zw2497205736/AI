@@ -1,16 +1,11 @@
-# PR Review Harness Agent Platform
+# 面向研发协作的 PR 智能审查 Agent
 
 > 一个面向 GitHub PR 审查场景的工程化 Harness Agent 系统。  
 > 核心不是“调用大模型生成 Review”，而是把 LLM、工具、状态、评估、恢复、告警和人工接管组合成一套稳定可运营的研发智能体框架。
 
 本项目已经从普通 AI 平台演进为 **PR Review Harness Agent**：
 
-- 不是简单 Prompt
-- 不是一次性代码审查脚本
-- 不是只接入大模型 API
-- 而是一个具备 **上下文治理、工具调用、执行编排、状态记忆、离线评估、线上观测、错误恢复、人工接管、告警运营** 的 Agent Harness
-
-当前 Harness 核心能力完成度：**98%+**。
+- 具备 **上下文治理、工具调用、执行编排、状态记忆、离线评估、线上观测、错误恢复、人工接管、告警运营** 的 Agent Harness
 
 ---
 
