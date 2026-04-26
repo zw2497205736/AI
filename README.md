@@ -5,7 +5,7 @@
 
 本项目已经从普通 AI 平台演进为 **PR Review Harness Agent**：
 
-- 具备 **上下文治理、工具调用、执行编排、状态记忆、离线评估、线上观测、错误恢复、人工接管、告警运营** 的 Agent Harness
+- 具备 **上下文治理、工具调用、执行编排、状态记忆、离线评估、线上观测、错误恢复、人工接管** 的 Agent Harness
 
 ---
 
@@ -24,7 +24,6 @@
 | 模型失败就失败 | 错误分类 + 降级重试 + checkpoint/resume |
 | 结果不可解释 | agent_trace 全链路可观测 |
 | 无法判断质量 | 离线 eval + LLM Judge + A/B compare |
-| 无运营闭环 | dashboard + alert + manual_handoff |
 
 ---
 
@@ -464,8 +463,6 @@ flowchart LR
     Signal --> Dashboard["Dashboard"]
     Signal --> Dedupe["告警去重"]
     Dedupe --> Webhook["Webhook Sender"]
-    Webhook --> Generic["Generic JSON"]
-    Webhook --> Slack["Slack Blocks"]
     Webhook --> Feishu["Feishu Card"]
 ```
 
